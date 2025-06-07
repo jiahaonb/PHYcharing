@@ -1,0 +1,92 @@
+# 智能充电桩调度计费系统配置文件
+# 修改后需重启系统生效
+
+# ===========================================
+# 充电桩配置
+# ===========================================
+charging_piles:
+  fast_charging_pile_num: 2          # 快充桩数量
+  trickle_charging_pile_num: 3       # 慢充桩数量
+  fast_charging_power: 30.0          # 快充功率 (度/小时)
+  trickle_charging_power: 10.0       # 慢充功率 (度/小时)
+
+# ===========================================
+# 队列和等候区配置
+# ===========================================
+queue_settings:
+  waiting_area_size: 10              # 等候区车位容量
+  charging_queue_len: 5              # 每个充电桩排队队列长度
+  max_queue_wait_time: 120           # 最大排队等待时间(分钟)
+
+# ===========================================
+# 计费配置
+# ===========================================
+billing:
+  # 电价配置 (元/度)
+  prices:
+    peak_time_price: 1.0             # 峰时电价
+    normal_time_price: 0.7           # 平时电价  
+    valley_time_price: 0.4           # 谷时电价
+    service_fee_price: 0.8           # 服务费单价
+  
+  # 时段配置 (24小时制)
+  time_periods:
+    peak_times:                      # 峰时时段
+      - [10, 15]                     # 10:00-15:00
+      - [18, 21]                     # 18:00-21:00
+    normal_times:                    # 平时时段
+      - [7, 10]                      # 7:00-10:00
+      - [15, 18]                     # 15:00-18:00
+      - [21, 23]                     # 21:00-23:00
+    valley_times:                    # 谷时时段
+      - [23, 7]                      # 23:00-次日7:00
+
+# ===========================================
+# 系统运行配置
+# ===========================================
+system:
+  # 调度策略
+  scheduling_strategy: "shortest_time"   # 调度策略: shortest_time(最短完成时间), first_come(先来先服务)
+  
+  # 故障处理
+  fault_detection_interval: 30           # 故障检测间隔(秒)
+  auto_restart_on_fault: true            # 故障时自动重启充电桩
+  max_fault_restart_attempts: 3          # 最大故障重启尝试次数
+  
+  # 数据清理
+  auto_cleanup_records: true             # 自动清理历史记录
+  record_retention_days: 90              # 记录保留天数
+
+# ===========================================
+# 通知配置  
+# ===========================================
+notifications:
+  enable_queue_notifications: true       # 启用排队通知
+  enable_charging_complete_notifications: true  # 启用充电完成通知
+  queue_position_update_interval: 10     # 排队位置更新间隔(秒)
+
+# ===========================================
+# 安全配置
+# ===========================================
+security:
+  session_timeout_minutes: 30           # 会话超时时间(分钟)
+  max_login_attempts: 5                 # 最大登录尝试次数
+  password_min_length: 6                # 密码最小长度
+
+# ===========================================
+# 服务器端口配置
+# ===========================================
+server:
+  backend_host: "0.0.0.0"                # 后端监听地址
+  backend_port: 8000                     # 后端服务端口
+  frontend_host: "0.0.0.0"               # 前端监听地址  
+  frontend_port: 8088                    # 前端服务端口
+  api_prefix: "/api/v1"                  # API路径前缀
+
+# ===========================================
+# 数据库配置
+# ===========================================
+database:
+  url: "sqlite:///./charging_system.db"  # 数据库连接URL
+  backup_enabled: true                    # 启用数据库备份
+  backup_interval_hours: 24               # 备份间隔(小时) 
