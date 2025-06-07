@@ -270,8 +270,10 @@ const formatDate = (dateString) => {
 const getStatusType = (status) => {
   const statusMap = {
     'normal': 'success',
+    'charging': 'primary',
     'fault': 'danger',  
-    'maintenance': 'warning'
+    'maintenance': 'warning',
+    'offline': 'info'
   }
   return statusMap[status] || 'info'
 }
@@ -279,8 +281,10 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const statusMap = {
     'normal': '正常',
+    'charging': '使用中',
     'fault': '故障',
-    'maintenance': '维护中'
+    'maintenance': '维护中',
+    'offline': '离线'
   }
   return statusMap[status] || '未知'
 }

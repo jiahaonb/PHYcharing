@@ -20,21 +20,63 @@ class SystemScheduler:
         """获取新的数据库会话"""
         return next(get_db())
     
+    def restore_pile_status(self):
+        """恢复充电桩状态"""
+        logger.info("恢复充电桩状态...")
+        
+        try:
+            # 获取所有充电桩
+            all_piles = self.db.query(ChargingPile).all()
+            
+            restored_count = 0
+            for pile in all_piles:
+                # 检查该充电桩是否有正在充电的车辆
+                charging_vehicle = self.db.query(ChargingQueue).filter(
+                    ChargingQueue.charging_pile_id == pile.id,
+                    ChargingQueue.status == QueueStatus.CHARGING
+                ).first()
+                
+                if charging_vehicle:
+                    # 有车辆正在充电，状态应为使用中
+                    if pile.status != ChargingPileStatus.CHARGING:
+                        pile.status = ChargingPileStatus.CHARGING
+                        restored_count += 1
+                        logger.info(f"🔋 充电桩 {pile.pile_number} 状态恢复为使用中 (车辆: {charging_vehicle.queue_number})")
+                else:
+                    # 没有车辆正在充电，状态应为正常（除非是故障或离线）
+                    if pile.status == ChargingPileStatus.CHARGING:
+                        pile.status = ChargingPileStatus.NORMAL
+                        restored_count += 1
+                        logger.info(f"🔋 充电桩 {pile.pile_number} 状态恢复为正常")
+            
+            if restored_count > 0:
+                self.db.commit()
+                logger.info(f"恢复了 {restored_count} 个充电桩状态")
+            else:
+                logger.info("所有充电桩状态正常，无需恢复")
+                
+        except Exception as e:
+            logger.error(f"恢复充电桩状态失败: {e}")
+            self.db.rollback()
+    
     def recover_system_state(self):
         """系统启动时恢复状态"""
         logger.info("开始恢复系统状态...")
         
         try:
-            # 1. 检查和修复孤立的排队记录
+            # 1. 恢复充电桩状态
+            self.restore_pile_status()
+            
+            # 2. 检查和修复孤立的排队记录
             self.fix_orphaned_queues()
             
-            # 2. 重新调度等候区的车辆
+            # 3. 重新调度等候区的车辆
             self.reschedule_waiting_vehicles()
             
-            # 3. 检查排队中的车辆是否可以开始充电
+            # 4. 检查排队中的车辆是否可以开始充电
             self.check_queuing_vehicles()
             
-            # 4. 清理无效状态
+            # 5. 清理无效状态
             self.cleanup_invalid_states()
             
             logger.info("系统状态恢复完成")

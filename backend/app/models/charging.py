@@ -12,6 +12,7 @@ class ChargingMode(enum.Enum):
 class ChargingPileStatus(enum.Enum):
     """充电桩状态枚举"""
     NORMAL = "normal"  # 正常
+    CHARGING = "charging"  # 使用中
     FAULT = "fault"  # 故障
     OFFLINE = "offline"  # 离线
 

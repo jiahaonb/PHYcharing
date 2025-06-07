@@ -466,19 +466,16 @@ const stayingVehicles = computed(() => {
     // 获取正在排队或充电的车辆ID列表
     const activeVehicleIds = new Set()
     ;(queueData.value || []).forEach(queue => {
-      if (queue.vehicle && queue.vehicle.id) {
+      if (queue.vehicle && queue.vehicle.id && 
+          (queue.status === 'waiting' || queue.status === 'queuing' || queue.status === 'charging')) {
         activeVehicleIds.add(queue.vehicle.id)
       }
     })
     
-    // 暂留区显示状态为"暂留"的车辆
-    return allVehicles
-      .filter(vehicle => 
-        vehicle && 
-        vehicle.id && 
-        vehicle.status === '暂留' &&
-        !activeVehicleIds.has(vehicle.id)
-      )
+    // 暂留区显示不在活跃列表中的车辆
+    return allVehicles.filter(vehicle => 
+      vehicle && vehicle.id && !activeVehicleIds.has(vehicle.id)
+    )
   } catch (error) {
     console.error('计算暂留车辆时出错:', error)
     return []
@@ -1162,6 +1159,15 @@ onUnmounted(() => {
   scrollbar-color: #c1c1c1 #f1f1f1;
 }
 
+/* 暂留区专用布局 - 从上到下紧凑排列 */
+.stay-area .vehicle-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px; /* 行间距8px, 列间距10px */
+  align-content: flex-start;
+  justify-content: flex-start;
+}
+
 .vehicle-grid::-webkit-scrollbar {
   width: 6px;
 }
@@ -1493,13 +1499,30 @@ onUnmounted(() => {
 /* 车辆项样式 */
 .vehicle-item {
   position: relative;
-  padding: 10px;
-  border-radius: 6px;
+  padding: 8px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.3s ease;
   animation: vehicleEnter 0.6s ease-out forwards;
   opacity: 0;
   transform: translateY(20px);
+  min-width: 80px;
+  max-width: 100px;
+}
+
+/* 暂留区车辆样式 - 小矩形固定大小 */
+.stay-area .vehicle-item {
+  padding: 6px 8px;
+  width: 120px !important;
+  height: 60px !important;
+  min-width: unset;
+  max-width: unset;
+  border: 2px solid #909399 !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .vehicle-item:hover {
@@ -1538,8 +1561,8 @@ onUnmounted(() => {
 }
 
 .vehicle-item.stay {
-  background: linear-gradient(135deg, #f5f5f5, #e8e8e8);
-  border: 1px solid #d3d3d3;
+  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  border: 2px solid #909399;
 }
 
 .vehicle-item.waiting.fast {
@@ -1564,8 +1587,14 @@ onUnmounted(() => {
 
 .vehicle-icon {
   text-align: center;
-  font-size: 24px;
-  margin-bottom: 8px;
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+
+/* 暂留区车辆图标 - 小矩形紧凑样式 */
+.stay-area .vehicle-icon {
+  font-size: 16px;
+  margin-bottom: 1px;
 }
 
 .vehicle-item.stay .vehicle-icon { color: #909399; }
@@ -1581,14 +1610,27 @@ onUnmounted(() => {
 .vehicle-plate {
   font-weight: bold;
   color: #303133;
-  margin-bottom: 4px;
-  font-size: 12px;
+  margin-bottom: 3px;
+  font-size: 11px;
 }
 
 .vehicle-status {
   color: #606266;
-  font-size: 11px;
+  font-size: 10px;
+  margin-bottom: 3px;
+}
+
+/* 暂留区车辆信息 - 小矩形紧凑样式 */
+.stay-area .vehicle-plate {
+  font-size: 15px;
+  margin-bottom: 6px;
+  line-height: 1.2;
+}
+
+.stay-area .vehicle-status {
+  font-size: 10px;
   margin-bottom: 5px;
+  line-height: 1;
 }
 
 .charging-progress {
