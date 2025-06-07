@@ -80,6 +80,38 @@ class QueueLogResponse(BaseModel):
     action: str
     description: str
 
+class VehicleWithOwnerResponse(BaseModel):
+    id: int
+    license_plate: str
+    battery_capacity: float
+    model: str = None
+    status: str = 'registered'
+    owner: Optional[dict] = None
+    
+    class Config:
+        from_attributes = True
+
+class ChargingPileWithSpotsResponse(BaseModel):
+    id: int
+    pile_id: str
+    type: str
+    status: str
+    power: float
+    
+    class Config:
+        from_attributes = True
+
+class QueueWithVehicleResponse(BaseModel):
+    id: int
+    queue_number: str
+    status: str
+    pile_id: str = None
+    vehicle: Optional[VehicleWithOwnerResponse] = None
+    estimated_completion: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
 def get_admin_user(current_user: User = Depends(get_current_user)):
     """获取管理员用户"""
     if not current_user.is_admin:
@@ -425,4 +457,165 @@ def get_queue_logs(
     except Exception as e:
         # 如果出现任何错误，返回空列表而不是让服务器崩溃
         print(f"Error in get_queue_logs: {str(e)}")
+        return []
+
+@router.get("/scene/vehicles", response_model=List[VehicleWithOwnerResponse], summary="获取所有车辆（包含车主信息）")
+def get_vehicles_with_owners(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取所有车辆及其车主信息，用于充电场景动画"""
+    try:
+        # 使用joinedload预加载关联数据
+        from sqlalchemy.orm import joinedload
+        vehicles = db.query(Vehicle).options(joinedload(Vehicle.owner)).all()
+        
+        result = []
+        for vehicle in vehicles:
+            try:
+                owner_info = None
+                if vehicle.owner:
+                    owner_info = {
+                        "username": vehicle.owner.username,
+                        "email": vehicle.owner.email,
+                        "phone": getattr(vehicle.owner, 'phone', None)
+                    }
+                
+                vehicle_data = {
+                    "id": vehicle.id,
+                    "license_plate": vehicle.license_plate,
+                    "battery_capacity": vehicle.battery_capacity or 0.0,
+                    "model": vehicle.model or "未知型号",
+                    "status": "registered",  # 默认状态
+                    "owner": owner_info
+                }
+                result.append(vehicle_data)
+            except Exception as e:
+                print(f"处理车辆 {vehicle.id} 时出错: {e}")
+                continue
+        
+        return result
+    except Exception as e:
+        print(f"获取车辆数据时出错: {e}")
+        return []
+
+@router.get("/scene/charging-piles", response_model=List[ChargingPileWithSpotsResponse], summary="获取充电桩信息（用于场景动画）")
+def get_charging_piles_for_scene(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取充电桩信息，用于充电场景动画"""
+    try:
+        piles = db.query(ChargingPile).all()
+        
+        result = []
+        for pile in piles:
+            try:
+                # 安全地获取充电模式
+                charging_mode = pile.charging_mode
+                if hasattr(charging_mode, 'value'):
+                    mode_str = charging_mode.value
+                else:
+                    mode_str = str(charging_mode)
+                
+                # 安全地获取状态
+                status = pile.status
+                if hasattr(status, 'value'):
+                    status_str = status.value
+                else:
+                    status_str = str(status)
+                
+                pile_data = {
+                    "id": pile.id,
+                    "pile_id": pile.pile_number,
+                    "type": "fast" if mode_str == "fast" else "trickle",
+                    "status": status_str,
+                    "power": pile.power or 0.0
+                }
+                result.append(pile_data)
+            except Exception as e:
+                print(f"处理充电桩 {pile.id} 时出错: {e}")
+                continue
+        
+        return result
+    except Exception as e:
+        print(f"获取充电桩数据时出错: {e}")
+        return []
+
+@router.get("/scene/charging-queue", response_model=List[QueueWithVehicleResponse], summary="获取排队信息（包含车辆详情）")
+def get_charging_queue_with_vehicles(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取排队信息及车辆详情，用于充电场景动画"""
+    try:
+        # 使用joinedload预加载关联数据
+        from sqlalchemy.orm import joinedload
+        queues = db.query(ChargingQueue).options(
+            joinedload(ChargingQueue.vehicle).joinedload(Vehicle.owner),
+            joinedload(ChargingQueue.pile)
+        ).all()
+        
+        result = []
+        for queue in queues:
+            try:
+                vehicle_info = None
+                if queue.vehicle:
+                    owner_info = None
+                    if queue.vehicle.owner:
+                        owner_info = {
+                            "username": queue.vehicle.owner.username,
+                            "email": queue.vehicle.owner.email,
+                            "phone": getattr(queue.vehicle.owner, 'phone', None)
+                        }
+                    
+                    # 安全地获取队列状态
+                    queue_status = queue.status
+                    if hasattr(queue_status, 'value'):
+                        status_str = queue_status.value
+                    else:
+                        status_str = str(queue_status)
+                    
+                    vehicle_info = {
+                        "id": queue.vehicle.id,
+                        "license_plate": queue.vehicle.license_plate,
+                        "battery_capacity": queue.vehicle.battery_capacity or 0.0,
+                        "model": queue.vehicle.model or "未知型号",
+                        "status": status_str,
+                        "owner": owner_info
+                    }
+                
+                # 安全地获取充电桩信息
+                pile_id = None
+                if queue.pile:
+                    pile_id = queue.pile.pile_number
+                elif queue.charging_pile_id:
+                    # 如果pile关联为空，但有charging_pile_id，尝试查询
+                    pile = db.query(ChargingPile).filter(ChargingPile.id == queue.charging_pile_id).first()
+                    if pile:
+                        pile_id = pile.pile_number
+                
+                # 安全地获取队列状态
+                queue_status = queue.status
+                if hasattr(queue_status, 'value'):
+                    status_str = queue_status.value
+                else:
+                    status_str = str(queue_status)
+                
+                queue_data = {
+                    "id": queue.id,
+                    "queue_number": queue.queue_number,
+                    "status": status_str,
+                    "pile_id": pile_id,
+                    "vehicle": vehicle_info,
+                    "estimated_completion": queue.estimated_completion_time
+                }
+                result.append(queue_data)
+            except Exception as e:
+                print(f"处理队列 {queue.id} 时出错: {e}")
+                continue
+        
+        return result
+    except Exception as e:
+        print(f"获取队列数据时出错: {e}")
         return [] 

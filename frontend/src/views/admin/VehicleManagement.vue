@@ -15,8 +15,16 @@
         <el-table-column prop="license_plate" label="车牌号" width="120" />
         <el-table-column prop="model" label="型号" width="180" />
         <el-table-column prop="battery_capacity" label="电池容量(kWh)" width="130" />
-        <el-table-column prop="owner_username" label="车主用户名" width="120" />
-        <el-table-column prop="owner_email" label="车主邮箱" width="200" />
+        <el-table-column label="车主用户名" width="120">
+          <template #default="scope">
+            {{ scope.row.owner?.username || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="车主邮箱" width="200">
+          <template #default="scope">
+            {{ scope.row.owner?.email || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="添加时间" width="180">
           <template #default="scope">
             {{ formatDateTime(scope.row.created_at) }}
@@ -46,10 +54,13 @@
             {{ selectedVehicle.battery_capacity }} kWh
           </el-descriptions-item>
           <el-descriptions-item label="车主用户名">
-            {{ selectedVehicle.owner_username }}
+            {{ selectedVehicle.owner?.username || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="车主邮箱">
-            {{ selectedVehicle.owner_email }}
+            {{ selectedVehicle.owner?.email || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="车主电话">
+            {{ selectedVehicle.owner?.phone || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="添加时间">
             {{ formatDateTime(selectedVehicle.created_at) }}
@@ -79,10 +90,14 @@ const selectedVehicle = ref(null)
 const fetchVehicles = async () => {
   loading.value = true
   try {
-    vehicles.value = await api.get('/admin/vehicles')
+    // 使用与充电场景页面相同的端点，确保数据一致
+    const response = await api.get('/admin/scene/vehicles')
+    vehicles.value = response || []
+    console.log('✅ 获取车辆数据成功，数量:', vehicles.value.length)
   } catch (error) {
     console.error('获取车辆列表失败:', error)
-    ElMessage.error('获取车辆列表失败')
+    vehicles.value = []
+    ElMessage.error('获取车辆列表失败，请检查网络连接或联系管理员')
   } finally {
     loading.value = false
   }
@@ -112,8 +127,10 @@ const formatDateTime = (dateStr) => {
 }
 
 // 页面挂载时获取数据
-onMounted(() => {
-  fetchVehicles()
+onMounted(async () => {
+  console.log('🚀 车辆管理页面已挂载，开始加载数据...')
+  await fetchVehicles()
+  console.log('✅ 车辆管理页面初始化完成')
 })
 </script>
 
