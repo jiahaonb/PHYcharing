@@ -46,6 +46,11 @@ const routes = [
         path: 'vehicles',
         name: 'VehicleManagement',
         component: () => import('@/views/user/VehicleManagement.vue')
+      },
+      {
+        path: 'vehicle-monitoring',
+        name: 'VehicleMonitoring',
+        component: () => import('@/views/user/VehicleMonitoring.vue')
       }
     ]
   },
@@ -54,6 +59,7 @@ const routes = [
     name: 'AdminLayout',
     component: () => import('@/layouts/AdminLayout.vue'),
     meta: { requiresAuth: true, requiresAdmin: true },
+    redirect: '/admin/charging-scene',
     children: [
       {
         path: 'dashboard',
@@ -94,6 +100,11 @@ const routes = [
         path: 'config',
         name: 'ConfigManagement',
         component: () => import('@/views/admin/ConfigManagement.vue')
+      },
+      {
+        path: 'users',
+        name: 'UserManagement',
+        component: () => import('@/views/admin/UserManagement.vue')
       }
     ]
   }

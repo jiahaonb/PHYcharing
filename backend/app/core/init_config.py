@@ -231,7 +231,7 @@ def initialize_config_from_yaml():
     
     # 加载YAML配置，从项目根目录查找
     import os
-    config_path = os.path.join("..", "config.yaml")
+    config_path = "../config.yaml"  # 从backend目录回到项目根目录
     config_data = load_yaml_config(config_path)
     if not config_data:
         print("未能加载配置数据")

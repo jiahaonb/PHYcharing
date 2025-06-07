@@ -17,6 +17,10 @@
               <el-icon><Download /></el-icon>
               导出配置
             </el-button>
+            <el-button @click="autoConfigureChargingPiles" type="warning">
+              <el-icon><Setting /></el-icon>
+              自动配置充电桩
+            </el-button>
           </div>
         </div>
       </template>
@@ -251,7 +255,8 @@ import {
   Edit, 
   Delete, 
   Download, 
-  Check 
+  Check,
+  Setting 
 } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 
@@ -403,6 +408,17 @@ const saveConfig = async () => {
       // 更新配置
       await api.put(`/admin/config/${editForm.config_key}`, updateData)
       ElMessage.success('配置更新成功')
+      
+      // 如果是充电桩相关配置，自动同步配置
+      if (editForm.config_key.includes('charging_piles')) {
+        if (editForm.config_key.includes('pile_num')) {
+          // 如果修改了充电桩数量，执行自动配置（包含数量调整）
+          await autoConfigureChargingPiles()
+        } else if (editForm.config_key.includes('power')) {
+          // 如果只修改了功率，只同步功率
+          await syncChargingPileConfig()
+        }
+      }
     } else {
       // 创建配置
       await api.post('/admin/config/', {
@@ -419,6 +435,50 @@ const saveConfig = async () => {
     ElMessage.error('保存配置失败')
   } finally {
     saving.value = false
+  }
+}
+
+const syncChargingPileConfig = async () => {
+  try {
+    console.log('🔄 同步充电桩配置...')
+    const response = await api.post('/admin/piles/sync-config')
+    if (response.updated_count > 0) {
+      ElMessage.success(`已同步 ${response.updated_count} 个充电桩的功率配置`)
+    } else {
+      console.log('充电桩功率已是最新，无需更新')
+    }
+  } catch (error) {
+    console.error('同步充电桩配置失败:', error)
+    ElMessage.warning('配置已保存，但同步充电桩失败')
+  }
+}
+
+const autoConfigureChargingPiles = async () => {
+  try {
+    console.log('🔧 自动配置充电桩...')
+    const response = await api.post('/admin/piles/auto-configure')
+    
+    console.log('自动配置响应:', response)
+    
+    // 显示配置结果
+    let message = `充电桩自动配置完成！\n`
+    message += `目标配置：快充${response.target_config.fast_piles}个，慢充${response.target_config.trickle_piles}个\n`
+    message += `最终状态：总计${response.final_status.total_piles}个充电桩\n\n`
+    
+    if (response.actions && response.actions.length > 0) {
+      message += `执行操作：\n${response.actions.join('\n')}`
+    } else {
+      message += `无需调整，充电桩配置已是最新状态`
+    }
+    
+    ElMessageBox.alert(message, '自动配置结果', {
+      confirmButtonText: '确定',
+      type: 'success'
+    })
+    
+  } catch (error) {
+    console.error('自动配置充电桩失败:', error)
+    ElMessage.error('自动配置充电桩失败')
   }
 }
 

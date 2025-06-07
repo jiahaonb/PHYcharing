@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     
     # 队列配置
     QUEUE_SETTINGS_WAITING_AREA_SIZE: int = 10
-    QUEUE_SETTINGS_CHARGING_QUEUE_LEN: int = 5
+    QUEUE_SETTINGS_CHARGING_QUEUE_LEN: int = 3  # 每个充电桩排队位数量
     QUEUE_SETTINGS_MAX_QUEUE_WAIT_TIME: int = 120
     
     # 计费配置

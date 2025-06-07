@@ -38,8 +38,8 @@
             
             <el-form-item label="充电模式" prop="charging_mode">
               <el-radio-group v-model="requestForm.charging_mode">
-                <el-radio label="fast">快充 (30度/小时)</el-radio>
-                <el-radio label="trickle">慢充 (10度/小时)</el-radio>
+                <el-radio label="fast">快充 ({{ chargingPowerConfig.fast_charging_power }}度/小时)</el-radio>
+                <el-radio label="trickle">慢充 ({{ chargingPowerConfig.trickle_charging_power }}度/小时)</el-radio>
               </el-radio-group>
             </el-form-item>
             
@@ -125,8 +125,10 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
 import api from '@/utils/api'
 
+const route = useRoute()
 const requestFormRef = ref()
 const loading = ref(false)
 const vehicles = ref([])
@@ -158,6 +160,27 @@ const selectedVehicle = computed(() => {
   return vehicles.value.find(v => v.id === requestForm.vehicle_id)
 })
 
+const chargingPowerConfig = ref({
+  fast_charging_power: 30.0,
+  trickle_charging_power: 10.0
+})
+
+const fetchChargingConfig = async () => {
+  try {
+    // 使用用户端API获取充电桩配置
+    const config = await api.get('/users/charging/config')
+    chargingPowerConfig.value.fast_charging_power = config.fast_charging_power
+    chargingPowerConfig.value.trickle_charging_power = config.trickle_charging_power
+  } catch (error) {
+    console.error('获取充电配置失败:', error)
+    // 使用默认值，不阻塞功能
+    chargingPowerConfig.value = {
+      fast_charging_power: 30.0,
+      trickle_charging_power: 7.0
+    }
+  }
+}
+
 const onVehicleChange = () => {
   if (selectedVehicle.value) {
     // 重置充电量为合理值
@@ -168,6 +191,16 @@ const onVehicleChange = () => {
 const fetchVehicles = async () => {
   try {
     vehicles.value = await api.get('/users/vehicles')
+    
+    // 检查URL参数，预选车辆
+    const vehicleId = route.query.vehicleId
+    if (vehicleId) {
+      const targetVehicle = vehicles.value.find(v => v.id == vehicleId)
+      if (targetVehicle) {
+        requestForm.vehicle_id = targetVehicle.id
+        onVehicleChange()
+      }
+    }
   } catch (error) {
     console.error('获取车辆列表失败:', error)
   }
@@ -214,6 +247,7 @@ const resetForm = () => {
 onMounted(() => {
   fetchVehicles()
   refreshWaitingInfo()
+  fetchChargingConfig()
 })
 </script>
 

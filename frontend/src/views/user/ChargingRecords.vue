@@ -29,26 +29,7 @@
 import { ref } from 'vue'
 
 const records = ref([
-  {
-    date: '2024-01-15',
-    pile: 'FC001',
-    startTime: '14:30',
-    endTime: '17:00',
-    duration: '2h30m',
-    energy: 75.0,
-    cost: 52.5,
-    status: 'completed'
-  },
-  {
-    date: '2024-01-14',
-    pile: 'SC001',
-    startTime: '09:15',
-    endTime: '14:30',
-    duration: '5h15m',
-    energy: 36.8,
-    cost: 25.8,
-    status: 'completed'
-  }
+
 ])
 </script>
 

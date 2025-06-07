@@ -100,8 +100,8 @@ const handleLogin = async () => {
         
         // 根据用户角色跳转
         if (authStore.isAdmin) {
-          console.log('管理员跳转到 /admin/dashboard')
-          await router.push('/admin/dashboard')
+          console.log('管理员跳转到 /admin（自动重定向到充电场景动画）')
+          await router.push('/admin')
         } else {
           console.log('普通用户跳转到 /user/dashboard')
           await router.push('/user/dashboard')

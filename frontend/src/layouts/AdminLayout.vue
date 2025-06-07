@@ -14,6 +14,11 @@
           @select="handleMenuSelect"
           router
         >
+          <el-menu-item index="/admin/charging-scene">
+            <el-icon><VideoPlay /></el-icon>
+            <span>充电场景动画</span>
+          </el-menu-item>
+          
           <el-menu-item index="/admin/dashboard">
             <el-icon><Monitor /></el-icon>
             <span>仪表板</span>
@@ -34,11 +39,6 @@
             <span>队列监控</span>
           </el-menu-item>
           
-          <el-menu-item index="/admin/charging-scene">
-            <el-icon><VideoPlay /></el-icon>
-            <span>充电场景动画</span>
-          </el-menu-item>
-          
           <el-menu-item index="/admin/reports">
             <el-icon><DataAnalysis /></el-icon>
             <span>数据报表</span>
@@ -52,6 +52,11 @@
           <el-menu-item index="/admin/config">
             <el-icon><Setting /></el-icon>
             <span>系统配置</span>
+          </el-menu-item>
+          
+          <el-menu-item index="/admin/users">
+            <el-icon><UserFilled /></el-icon>
+            <span>用户管理</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -91,6 +96,9 @@
         </el-main>
       </el-container>
     </el-container>
+    
+    <!-- 全局日志组件 -->
+    <GlobalLogger />
   </div>
 </template>
 
@@ -98,6 +106,7 @@
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import SystemClock from '@/components/SystemClock.vue'
+import GlobalLogger from '@/components/GlobalLogger.vue'
 import { 
   Lightning, 
   Monitor, 
@@ -108,7 +117,8 @@ import {
   ArrowDown,
   Van,
   VideoPlay,
-  Setting 
+  Setting,
+  UserFilled 
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -127,7 +137,8 @@ const getPageTitle = () => {
     '/admin/charging-scene': '充电场景动画',
     '/admin/reports': '数据报表',
     '/admin/vehicles': '车辆管理',
-    '/admin/config': '系统配置'
+    '/admin/config': '系统配置',
+    '/admin/users': '用户管理'
   }
   return routeMap[router.currentRoute.value.path] || '管理后台'
 }
@@ -219,5 +230,6 @@ const handleCommand = (command) => {
 .main-content {
   background-color: #f0f2f5;
   padding: 20px;
+  padding-bottom: 200px; /* 为日志组件留出空间 */
 }
 </style> 

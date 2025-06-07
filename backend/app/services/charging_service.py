@@ -31,15 +31,21 @@ class ChargingScheduleService:
     def submit_charging_request(self, user_id: int, vehicle_id: int, 
                               charging_mode: ChargingMode, requested_amount: float) -> str:
         """提交充电请求"""
-        # 检查用户是否已有未完成的充电请求
+        # 检查车辆当前状态，只有"暂留"状态的车辆才能申请充电
         existing_queue = self.db.query(ChargingQueue).filter(
-            ChargingQueue.user_id == user_id,
             ChargingQueue.vehicle_id == vehicle_id,
             ChargingQueue.status.in_([QueueStatus.WAITING, QueueStatus.QUEUING, QueueStatus.CHARGING])
         ).first()
         
         if existing_queue:
-            raise Exception(f"该车辆已有未完成的充电请求（排队号：{existing_queue.queue_number}），请先完成或取消当前请求")
+            # 根据状态返回不同的错误信息
+            status_map = {
+                QueueStatus.WAITING: "等候",
+                QueueStatus.QUEUING: "等候",
+                QueueStatus.CHARGING: "充电中"
+            }
+            current_status = status_map.get(existing_queue.status, "未知")
+            raise Exception(f"该车辆当前状态为【{current_status}】，无法重复申请充电。请先完成当前充电或取消请求")
         
         # 检查等候区容量
         waiting_count = self.db.query(ChargingQueue).filter(
@@ -71,32 +77,47 @@ class ChargingScheduleService:
         return queue_number
     
     def schedule_charging(self):
-        """智能调度算法"""
-        # 获取所有可用的充电桩
+        """FCFS调度算法 - 快慢充分开"""
+        # 分别调度快充和慢充
+        self._schedule_by_mode(ChargingMode.FAST)
+        self._schedule_by_mode(ChargingMode.TRICKLE)
+    
+    def _schedule_by_mode(self, charging_mode: ChargingMode):
+        """按充电模式调度"""
+        # 获取该模式的可用充电桩
         available_piles = self.db.query(ChargingPile).filter(
+            ChargingPile.charging_mode == charging_mode,
             ChargingPile.status == ChargingPileStatus.NORMAL,
             ChargingPile.is_active == True
         ).all()
         
-        for pile in available_piles:
-            # 检查该充电桩队列是否有空位
-            queue_count = self.db.query(ChargingQueue).filter(
-                ChargingQueue.charging_pile_id == pile.id,
-                ChargingQueue.status.in_([QueueStatus.QUEUING, QueueStatus.CHARGING])
-            ).count()
+        # 获取该模式等候区的车辆（按FCFS排序）
+        waiting_vehicles = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_mode == charging_mode,
+            ChargingQueue.status == QueueStatus.WAITING
+        ).order_by(ChargingQueue.queue_time).all()
+        
+        # 为每个等候车辆寻找可用的充电桩
+        for vehicle in waiting_vehicles:
+            assigned = False
             
-            if queue_count < settings.CHARGING_QUEUE_LEN:
-                # 找到匹配模式的等候车辆
-                waiting_vehicle = self.db.query(ChargingQueue).filter(
-                    ChargingQueue.charging_mode == pile.charging_mode,
-                    ChargingQueue.status == QueueStatus.WAITING
-                ).order_by(ChargingQueue.queue_time).first()
+            # 按充电桩ID顺序遍历（保证确定性）
+            for pile in sorted(available_piles, key=lambda p: p.id):
+                # 检查该充电桩是否有排队空位
+                current_queue_count = self.db.query(ChargingQueue).filter(
+                    ChargingQueue.charging_pile_id == pile.id,
+                    ChargingQueue.status.in_([QueueStatus.QUEUING, QueueStatus.CHARGING])
+                ).count()
                 
-                if waiting_vehicle:
-                    # 应用调度策略：选择完成充电时间最短的充电桩
-                    best_pile = self.find_optimal_pile(waiting_vehicle, available_piles)
-                    if best_pile:
-                        self.assign_to_pile(waiting_vehicle, best_pile)
+                # 如果充电桩有空位（1个充电位 + 3个排队位 = 最多4辆车）
+                if current_queue_count < settings.CHARGING_QUEUE_LEN + 1:
+                    self.assign_to_pile(vehicle, pile)
+                    assigned = True
+                    break
+            
+            # 如果没有可用的充电桩，等候车辆继续等待
+            if not assigned:
+                break
     
     def find_optimal_pile(self, queue_record: ChargingQueue, 
                          available_piles: List[ChargingPile]) -> Optional[ChargingPile]:
@@ -149,6 +170,27 @@ class ChargingScheduleService:
         queue_record.estimated_completion_time = datetime.now() + timedelta(hours=waiting_time + charging_time)
         
         self.db.commit()
+        
+        # 检查是否可以立即开始充电
+        self._check_and_start_charging(pile)
+    
+    def _check_and_start_charging(self, pile: ChargingPile):
+        """检查充电桩是否可以开始为下一辆车充电"""
+        # 检查充电桩是否有正在充电的车辆
+        charging_vehicle = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_pile_id == pile.id,
+            ChargingQueue.status == QueueStatus.CHARGING
+        ).first()
+        
+        if not charging_vehicle:
+            # 如果没有正在充电的车辆，找到第一个排队的车辆开始充电
+            next_vehicle = self.db.query(ChargingQueue).filter(
+                ChargingQueue.charging_pile_id == pile.id,
+                ChargingQueue.status == QueueStatus.QUEUING
+            ).order_by(ChargingQueue.queue_time).first()
+            
+            if next_vehicle:
+                self.start_charging(next_vehicle.id)
     
     def start_charging(self, queue_id: int):
         """开始充电"""

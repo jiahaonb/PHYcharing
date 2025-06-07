@@ -152,12 +152,13 @@ const getStatusType = (status) => {
 
 const getStatusText = (status) => {
   const statusMap = {
-    'charging': '充电中',
+    'normal': '空闲',
     'idle': '空闲',
+    'charging': '充电中',
     'fault': '故障',
     'maintenance': '维护中'
   }
-  return statusMap[status] || '未知'
+  return statusMap[status] || `未知(${status})`
 }
 
 const getPileCardClass = (status) => {
@@ -214,7 +215,7 @@ const fetchPileStatus = async () => {
         if (chargingQueue) {
           // 这里可以获取用户信息，但需要额外的API
           currentUser = `用户${chargingQueue.user_id}`
-          startTime = new Date(chargingQueue.start_charging_time).toLocaleTimeString()
+          startTime = new Date(chargingQueue.start_charging_time).toLocaleTimeString('zh-CN', { hour12: false })
         }
       } catch (error) {
         // 忽略错误，继续处理
@@ -268,7 +269,7 @@ const fetchQueueData = async () => {
 
 const fetchAlerts = async () => {
   // 暂时使用模拟数据，后续可以实现真实的警报系统
-  const currentTime = new Date().toLocaleTimeString()
+  const currentTime = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   const faultPiles = pileStatus.value.filter(p => p.status === 'fault')
   const busyQueues = queueData.value.filter(q => q.queueLength > 3)
   
@@ -297,8 +298,8 @@ const generateRealtimePower = (pile) => {
   // 如果不是正在充电状态，功率为0
   if (pile.status !== 'charging') return 0
   
-  // 根据充电模式设置额定功率
-  const ratedPower = pile.charging_mode === 'fast' ? 60 : 30
+  // 使用充电桩的实际功率配置而不是硬编码
+  const ratedPower = pile.power || (pile.charging_mode === 'fast' ? 30 : 10) // 使用实际power字段
   const variation = (Math.random() - 0.5) * 0.2 // ±10%变化
   return Math.max(0, Number((ratedPower * (1 + variation)).toFixed(1)))
 }
@@ -317,7 +318,7 @@ const generateRealtimeCurrent = (pile) => {
 // 更新功率历史数据
 const updatePowerHistory = () => {
   const now = new Date()
-  const timeLabel = now.toLocaleTimeString()
+  const timeLabel = now.toLocaleTimeString('zh-CN', { hour12: false })
   
   // 保持最近12个数据点
   if (powerHistory.value.length >= 12) {

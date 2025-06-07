@@ -15,6 +15,13 @@
         <el-table-column prop="license_plate" label="车牌号" width="120" />
         <el-table-column prop="model" label="型号" width="180" />
         <el-table-column prop="battery_capacity" label="电池容量(kWh)" width="130" />
+        <el-table-column label="当前状态" width="100">
+          <template #default="scope">
+            <el-tag :type="getStatusType(scope.row.status)" size="small">
+              {{ scope.row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="车主用户名" width="120">
           <template #default="scope">
             {{ scope.row.owner?.username || '-' }}
@@ -52,6 +59,11 @@
           </el-descriptions-item>
           <el-descriptions-item label="电池容量">
             {{ selectedVehicle.battery_capacity }} kWh
+          </el-descriptions-item>
+          <el-descriptions-item label="当前状态">
+            <el-tag :type="getStatusType(selectedVehicle.status)" size="small">
+              {{ selectedVehicle.status }}
+            </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="车主用户名">
             {{ selectedVehicle.owner?.username || '-' }}
@@ -112,6 +124,16 @@ const refreshData = () => {
 const viewDetails = (vehicle) => {
   selectedVehicle.value = vehicle
   detailVisible.value = true
+}
+
+// 获取状态类型（用于设置标签颜色）
+const getStatusType = (status) => {
+  const statusTypeMap = {
+    '暂留': 'info',
+    '等候': 'warning', 
+    '充电中': 'success'
+  }
+  return statusTypeMap[status] || 'info'
 }
 
 // 格式化日期时间

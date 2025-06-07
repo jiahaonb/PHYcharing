@@ -6,6 +6,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.models import User, Vehicle, ChargingPile, ChargingQueue, ChargingRecord, ChargingPileStatus, QueueStatus
 from app.services.charging_service import ChargingScheduleService
+from app.services.config_service import config_service
 from .auth import get_current_user
 
 router = APIRouter()
@@ -105,9 +106,12 @@ class QueueWithVehicleResponse(BaseModel):
     id: int
     queue_number: str
     status: str
+    charging_mode: str = None
+    charging_pile_id: int = None
     pile_id: str = None
     vehicle: Optional[VehicleWithOwnerResponse] = None
     estimated_completion: Optional[datetime] = None
+    queue_time: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -294,28 +298,45 @@ def get_queue_summary(
     db: Session = Depends(get_db)
 ):
     """获取队列总结信息"""
-    # 获取等待中的队列数量
-    waiting_count = db.query(ChargingQueue).filter(
-        ChargingQueue.status == QueueStatus.WAITING
-    ).count()
-    
-    # 获取充电中的数量
-    charging_count = db.query(ChargingQueue).filter(
-        ChargingQueue.status == QueueStatus.CHARGING
-    ).count()
-    
-    # 总排队人数
-    total_queues = waiting_count + charging_count
-    
-    # 计算平均等待时间（简单估算）
-    avg_wait_time = waiting_count * 15 if waiting_count > 0 else 0  # 每人平均15分钟
-    
-    return {
-        "total_queues": total_queues,
-        "waiting_count": waiting_count,
-        "charging_count": charging_count,
-        "avg_wait_time": avg_wait_time
-    }
+    try:
+        # 获取所有活跃的队列（等待中、排队中、充电中）
+        active_queues = db.query(ChargingQueue).filter(
+            ChargingQueue.status.in_([QueueStatus.WAITING, QueueStatus.QUEUING, QueueStatus.CHARGING])
+        ).all()
+        
+        # 分类统计
+        waiting_count = 0
+        charging_count = 0
+        
+        for queue in active_queues:
+            status = queue.status.value if hasattr(queue.status, 'value') else str(queue.status)
+            if status in ['waiting', 'queuing']:
+                waiting_count += 1
+            elif status == 'charging':
+                charging_count += 1
+        
+        # 总排队人数（等待+充电）
+        total_queues = waiting_count + charging_count
+        
+        # 计算平均等待时间（简单估算）
+        avg_wait_time = waiting_count * 15 if waiting_count > 0 else 0  # 每人平均15分钟
+        
+        print(f"队列统计 - 总计: {total_queues}, 等待: {waiting_count}, 充电: {charging_count}")
+        
+        return {
+            "total_queues": total_queues,
+            "waiting_count": waiting_count,
+            "charging_count": charging_count,
+            "avg_wait_time": avg_wait_time
+        }
+    except Exception as e:
+        print(f"获取队列统计信息失败: {e}")
+        return {
+            "total_queues": 0,
+            "waiting_count": 0,
+            "charging_count": 0,
+            "avg_wait_time": 0
+        }
 
 @router.post("/piles/{pile_id}/fault", summary="设置充电桩故障")
 def set_pile_fault(
@@ -341,10 +362,10 @@ def get_pile_queues(
     
     result = []
     for pile in piles:
-        # 获取该充电桩的队列 - 修复状态筛选逻辑
+        # 获取该充电桩的活跃队列（等待、排队、充电中）
         queues = db.query(ChargingQueue).filter(
             ChargingQueue.charging_pile_id == pile.id,
-            ChargingQueue.status.in_([QueueStatus.QUEUING, QueueStatus.CHARGING])
+            ChargingQueue.status.in_([QueueStatus.WAITING, QueueStatus.QUEUING, QueueStatus.CHARGING])
         ).order_by(ChargingQueue.queue_time).all()
         
         # 获取当前正在充电的用户
@@ -366,6 +387,7 @@ def get_pile_queues(
                 vehicle_info = f"{queue.vehicle.license_plate} ({queue.vehicle.model or '未知型号'})"
             
             queue_details.append({
+                "queue_id": queue.id,  # 添加queue_id用于管理操作
                 "position": i + 1,
                 "username": username,
                 "vehicle_info": vehicle_info,
@@ -373,9 +395,10 @@ def get_pile_queues(
                 "status": queue.status.value
             })
         
-        # 估算等待时间 - 修复状态判断
-        queuing_count = len([q for q in queues if q.status == QueueStatus.QUEUING])
-        estimated_wait_time = queuing_count * 30  # 每人30分钟
+        # 计算等待队列长度（排除正在充电的）
+        waiting_queues = [q for q in queues if q.status in [QueueStatus.WAITING, QueueStatus.QUEUING]]
+        actual_queue_length = len(waiting_queues)
+        estimated_wait_time = actual_queue_length * 30  # 每人30分钟
         
         # 确定充电桩的实际状态（基于使用情况）
         actual_pile_status = pile.status.value
@@ -390,7 +413,7 @@ def get_pile_queues(
             pile_id=pile.id,
             pile_name=f"{pile.charging_mode.value}充电桩-{pile.pile_number}",
             pile_status=actual_pile_status,
-            queue_length=len(queues),
+            queue_length=actual_queue_length,  # 使用修正后的队列长度
             current_user=current_user,
             estimated_wait_time=estimated_wait_time,
             queue_details=queue_details
@@ -470,6 +493,17 @@ def get_vehicles_with_owners(
         from sqlalchemy.orm import joinedload
         vehicles = db.query(Vehicle).options(joinedload(Vehicle.owner)).all()
         
+        # 获取所有排队信息，用于确定车辆状态
+        queues = db.query(ChargingQueue).filter(
+            ChargingQueue.status.in_([QueueStatus.WAITING, QueueStatus.QUEUING, QueueStatus.CHARGING])
+        ).all()
+        
+        # 创建车辆ID到队列状态的映射
+        vehicle_status_map = {}
+        for queue in queues:
+            status = queue.status.value if hasattr(queue.status, 'value') else str(queue.status)
+            vehicle_status_map[queue.vehicle_id] = status
+        
         result = []
         for vehicle in vehicles:
             try:
@@ -481,13 +515,25 @@ def get_vehicles_with_owners(
                         "phone": getattr(vehicle.owner, 'phone', None)
                     }
                 
+                # 根据队列状态确定车辆的实际状态
+                current_status = vehicle_status_map.get(vehicle.id, "暂留")
+                
+                # 状态映射到中文显示
+                status_text_map = {
+                    "waiting": "等候",
+                    "queuing": "等候",
+                    "charging": "充电中"
+                }
+                display_status = status_text_map.get(current_status, "暂留")
+                
                 vehicle_data = {
                     "id": vehicle.id,
                     "license_plate": vehicle.license_plate,
                     "battery_capacity": vehicle.battery_capacity or 0.0,
                     "model": vehicle.model or "未知型号",
-                    "status": "registered",  # 默认状态
-                    "owner": owner_info
+                    "status": display_status,  # 使用实际状态
+                    "owner": owner_info,
+                    "created_at": vehicle.created_at
                 }
                 result.append(vehicle_data)
             except Exception as e:
@@ -498,6 +544,57 @@ def get_vehicles_with_owners(
     except Exception as e:
         print(f"获取车辆数据时出错: {e}")
         return []
+
+@router.post("/piles/sync-config", summary="同步充电桩配置")
+def sync_pile_config(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """同步充电桩配置，从数据库配置更新充电桩功率"""
+    try:
+        # 获取最新配置
+        charging_config = config_service.get_charging_pile_config(db)
+        
+        # 获取所有充电桩
+        piles = db.query(ChargingPile).all()
+        
+        updated_count = 0
+        for pile in piles:
+            try:
+                charging_mode = pile.charging_mode
+                if hasattr(charging_mode, 'value'):
+                    mode_str = charging_mode.value
+                else:
+                    mode_str = str(charging_mode)
+                
+                # 根据模式更新功率
+                if mode_str == "fast":
+                    new_power = charging_config["fast_charging_power"]
+                else:
+                    new_power = charging_config["trickle_charging_power"]
+                
+                if pile.power != new_power:
+                    pile.power = new_power
+                    updated_count += 1
+                    print(f"充电桩 {pile.pile_number} 功率更新：{pile.power} -> {new_power}")
+                    
+            except Exception as e:
+                print(f"更新充电桩 {pile.id} 功率失败: {e}")
+                continue
+        
+        if updated_count > 0:
+            db.commit()
+        
+        return {
+            "message": "充电桩配置同步完成",
+            "updated_count": updated_count,
+            "total_piles": len(piles),
+            "config": charging_config
+        }
+        
+    except Exception as e:
+        print(f"同步充电桩配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"同步配置失败: {str(e)}")
 
 @router.get("/scene/charging-piles", response_model=List[ChargingPileWithSpotsResponse], summary="获取充电桩信息（用于场景动画）")
 def get_charging_piles_for_scene(
@@ -602,13 +699,23 @@ def get_charging_queue_with_vehicles(
                 else:
                     status_str = str(queue_status)
                 
+                # 安全地获取充电模式
+                charging_mode = queue.charging_mode
+                if hasattr(charging_mode, 'value'):
+                    mode_str = charging_mode.value
+                else:
+                    mode_str = str(charging_mode)
+                
                 queue_data = {
                     "id": queue.id,
                     "queue_number": queue.queue_number,
                     "status": status_str,
+                    "charging_mode": mode_str,
+                    "charging_pile_id": queue.charging_pile_id,
                     "pile_id": pile_id,
                     "vehicle": vehicle_info,
-                    "estimated_completion": queue.estimated_completion_time
+                    "estimated_completion": queue.estimated_completion_time,
+                    "queue_time": queue.queue_time
                 }
                 result.append(queue_data)
             except Exception as e:
@@ -618,4 +725,429 @@ def get_charging_queue_with_vehicles(
         return result
     except Exception as e:
         print(f"获取队列数据时出错: {e}")
-        return [] 
+        return []
+
+@router.post("/piles/auto-configure", summary="根据系统配置自动配置充电桩")
+def auto_configure_piles(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """根据系统配置自动配置充电桩数量和功率"""
+    try:
+        # 获取最新配置
+        pile_config = config_service.get_charging_pile_config(db)
+        fast_count = int(pile_config["fast_charging_pile_num"])
+        trickle_count = int(pile_config["trickle_charging_pile_num"])
+        fast_power = pile_config["fast_charging_power"]
+        trickle_power = pile_config["trickle_charging_power"]
+        
+        # 获取现有充电桩
+        existing_piles = db.query(ChargingPile).all()
+        existing_fast = [p for p in existing_piles if p.charging_mode.value == "fast"]
+        existing_trickle = [p for p in existing_piles if p.charging_mode.value == "trickle"]
+        
+        from app.models import ChargingMode
+        
+        actions = []
+        
+        # 处理快充桩
+        if len(existing_fast) < fast_count:
+            # 需要添加快充桩
+            for i in range(len(existing_fast), fast_count):
+                pile_number = f"F{i+1:02d}"
+                # 确保编号不重复
+                while db.query(ChargingPile).filter(ChargingPile.pile_number == pile_number).first():
+                    i += 1
+                    pile_number = f"F{i+1:02d}"
+                
+                new_pile = ChargingPile(
+                    pile_number=pile_number,
+                    charging_mode=ChargingMode.FAST,
+                    power=fast_power,
+                    status=ChargingPileStatus.NORMAL,
+                    is_active=True
+                )
+                db.add(new_pile)
+                actions.append(f"添加快充桩 {pile_number} (功率: {fast_power}kW)")
+                
+        elif len(existing_fast) > fast_count:
+            # 需要删除快充桩（删除最新的几个）
+            to_remove = existing_fast[fast_count:]
+            for pile in to_remove:
+                # 检查是否有排队或充电中的任务
+                active_queues = db.query(ChargingQueue).filter(
+                    ChargingQueue.charging_pile_id == pile.id,
+                    ChargingQueue.status.in_([QueueStatus.QUEUING, QueueStatus.CHARGING])
+                ).count()
+                
+                if active_queues > 0:
+                    actions.append(f"无法删除快充桩 {pile.pile_number}：有活跃任务")
+                else:
+                    db.delete(pile)
+                    actions.append(f"删除快充桩 {pile.pile_number}")
+        
+        # 处理慢充桩
+        if len(existing_trickle) < trickle_count:
+            # 需要添加慢充桩
+            for i in range(len(existing_trickle), trickle_count):
+                pile_number = f"T{i+1:02d}"
+                # 确保编号不重复
+                while db.query(ChargingPile).filter(ChargingPile.pile_number == pile_number).first():
+                    i += 1
+                    pile_number = f"T{i+1:02d}"
+                
+                new_pile = ChargingPile(
+                    pile_number=pile_number,
+                    charging_mode=ChargingMode.TRICKLE,
+                    power=trickle_power,
+                    status=ChargingPileStatus.NORMAL,
+                    is_active=True
+                )
+                db.add(new_pile)
+                actions.append(f"添加慢充桩 {pile_number} (功率: {trickle_power}kW)")
+                
+        elif len(existing_trickle) > trickle_count:
+            # 需要删除慢充桩
+            to_remove = existing_trickle[trickle_count:]
+            for pile in to_remove:
+                # 检查是否有排队或充电中的任务
+                active_queues = db.query(ChargingQueue).filter(
+                    ChargingQueue.charging_pile_id == pile.id,
+                    ChargingQueue.status.in_([QueueStatus.QUEUING, QueueStatus.CHARGING])
+                ).count()
+                
+                if active_queues > 0:
+                    actions.append(f"无法删除慢充桩 {pile.pile_number}：有活跃任务")
+                else:
+                    db.delete(pile)
+                    actions.append(f"删除慢充桩 {pile.pile_number}")
+        
+        # 更新现有充电桩的功率
+        for pile in existing_piles:
+            if pile.charging_mode.value == "fast" and pile.power != fast_power:
+                pile.power = fast_power
+                actions.append(f"更新快充桩 {pile.pile_number} 功率：{pile.power} -> {fast_power}kW")
+            elif pile.charging_mode.value == "trickle" and pile.power != trickle_power:
+                pile.power = trickle_power
+                actions.append(f"更新慢充桩 {pile.pile_number} 功率：{pile.power} -> {trickle_power}kW")
+        
+        db.commit()
+        
+        # 获取最终状态
+        final_piles = db.query(ChargingPile).all()
+        final_fast_count = len([p for p in final_piles if p.charging_mode.value == "fast"])
+        final_trickle_count = len([p for p in final_piles if p.charging_mode.value == "trickle"])
+        
+        return {
+            "message": "充电桩自动配置完成",
+            "target_config": {
+                "fast_piles": fast_count,
+                "trickle_piles": trickle_count,
+                "fast_power": fast_power,
+                "trickle_power": trickle_power
+            },
+            "final_status": {
+                "fast_piles": final_fast_count,
+                "trickle_piles": final_trickle_count,
+                "total_piles": len(final_piles)
+            },
+            "actions": actions
+        }
+        
+    except Exception as e:
+        print(f"自动配置充电桩失败: {e}")
+        raise HTTPException(status_code=500, detail=f"自动配置失败: {str(e)}")
+
+@router.get("/users", response_model=List[dict])
+async def get_all_users(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有用户列表（管理员功能）
+    """
+    users = db.query(User).all()
+    
+    result = []
+    for user in users:
+        # 获取用户的车辆数量
+        vehicle_count = db.query(Vehicle).filter(Vehicle.user_id == user.id).count()
+        
+        result.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "phone": getattr(user, 'phone', None),
+            "is_admin": user.is_admin,
+            "is_active": getattr(user, 'is_active', True),
+            "created_at": user.created_at,
+            "vehicle_count": vehicle_count
+        })
+    
+    return result
+
+@router.get("/users/{user_id}/detail", response_model=dict)
+async def get_user_detail(
+    user_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取用户详细信息（管理员功能）
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 获取用户的车辆
+    vehicles = db.query(Vehicle).filter(Vehicle.user_id == user_id).all()
+    
+    # 获取用户的充电记录统计
+    charging_records = db.query(ChargingRecord).filter(ChargingRecord.user_id == user_id).all()
+    
+    # 计算统计信息
+    charging_count = len(charging_records)
+    total_energy = sum(record.charging_amount or 0 for record in charging_records)
+    total_cost = sum(record.total_fee or 0 for record in charging_records)
+    
+    # 获取最近的充电记录（最多5条）
+    recent_records = db.query(ChargingRecord)\
+        .filter(ChargingRecord.user_id == user_id)\
+        .order_by(ChargingRecord.start_time.desc())\
+        .limit(5)\
+        .all()
+    
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "phone": getattr(user, 'phone', None),
+        "is_admin": user.is_admin,
+        "is_active": getattr(user, 'is_active', True),
+        "created_at": user.created_at,
+        "vehicle_count": len(vehicles),
+        "charging_count": charging_count,
+        "total_energy": total_energy,
+        "total_cost": total_cost,
+        "vehicles": [
+            {
+                "id": vehicle.id,
+                "license_plate": vehicle.license_plate,
+                "model": getattr(vehicle, 'model', None),
+                "battery_capacity": vehicle.battery_capacity,
+                "created_at": vehicle.created_at
+            }
+            for vehicle in vehicles
+        ],
+        "recent_records": [
+            {
+                "id": record.id,
+                "record_number": record.record_number,
+                "charging_amount": record.charging_amount,
+                "total_fee": record.total_fee,
+                "start_time": record.start_time,
+                "end_time": record.end_time
+            }
+            for record in recent_records
+        ]
+    }
+
+@router.put("/users/{user_id}/status", response_model=dict)
+async def update_user_status(
+    user_id: int,
+    status_data: dict,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    更新用户状态（管理员功能）
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 更新is_active字段（如果用户模型有这个字段）
+    if hasattr(user, 'is_active'):
+        user.is_active = status_data.get('is_active', True)
+        db.commit()
+        db.refresh(user)
+    
+    return {"message": "用户状态更新成功", "user_id": user_id}
+
+@router.delete("/queue/{queue_id}/cancel", summary="取消排队")
+async def cancel_queue(
+    queue_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    管理员取消排队中的车辆
+    """
+    # 查找排队记录
+    queue = db.query(ChargingQueue).filter(ChargingQueue.id == queue_id).first()
+    if not queue:
+        raise HTTPException(status_code=404, detail="排队记录不存在")
+    
+    # 检查状态是否可以取消
+    if queue.status != QueueStatus.QUEUING:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"无法取消：当前状态为 {queue.status.value}"
+        )
+    
+    # 获取车辆和用户信息用于日志
+    vehicle = db.query(Vehicle).filter(Vehicle.id == queue.vehicle_id).first()
+    user = db.query(User).filter(User.id == queue.user_id).first()
+    
+    vehicle_info = f"{vehicle.license_plate}" if vehicle else f"车辆ID:{queue.vehicle_id}"
+    user_info = f"{user.username}" if user else f"用户ID:{queue.user_id}"
+    
+    # 删除排队记录
+    db.delete(queue)
+    db.commit()
+    
+    return {
+        "message": f"已取消 {user_info} 的车辆 {vehicle_info} 的排队",
+        "queue_id": queue_id,
+        "action": "cancelled"
+    }
+
+@router.post("/queue/{queue_id}/stop-charging", summary="停止充电")
+async def stop_charging(
+    queue_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    管理员强制停止正在充电的车辆
+    """
+    # 查找充电记录
+    queue = db.query(ChargingQueue).filter(ChargingQueue.id == queue_id).first()
+    if not queue:
+        raise HTTPException(status_code=404, detail="充电记录不存在")
+    
+    # 检查状态是否为充电中
+    if queue.status != QueueStatus.CHARGING:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"无法停止：当前状态为 {queue.status.value}"
+        )
+    
+    # 获取车辆和用户信息
+    vehicle = db.query(Vehicle).filter(Vehicle.id == queue.vehicle_id).first()
+    user = db.query(User).filter(User.id == queue.user_id).first()
+    charging_pile = db.query(ChargingPile).filter(ChargingPile.id == queue.charging_pile_id).first()
+    
+    vehicle_info = f"{vehicle.license_plate}" if vehicle else f"车辆ID:{queue.vehicle_id}"
+    user_info = f"{user.username}" if user else f"用户ID:{queue.user_id}"
+    pile_info = f"{charging_pile.pile_number}" if charging_pile else f"充电桩ID:{queue.charging_pile_id}"
+    
+    try:
+        # 结束充电记录
+        from datetime import datetime
+        
+        # 计算充电时长和费用（简化计算）
+        if queue.start_charging_time:
+            charging_duration = (datetime.now() - queue.start_charging_time).total_seconds() / 3600  # 小时
+            charging_amount = charging_duration * (charging_pile.power if charging_pile else 30)  # 简化计算
+            
+            # 获取计费配置
+            from app.services.config_service import config_service
+            billing_config = config_service.get_billing_config(db)
+            prices = billing_config.get('prices', {})
+            electricity_rate = prices.get('normal_time_price', 0.7)  # 使用正常时段价格
+            service_rate = prices.get('service_fee_price', 0.8)
+            
+            electricity_fee = charging_amount * electricity_rate
+            service_fee = charging_amount * service_rate
+            total_fee = electricity_fee + service_fee
+        else:
+            charging_duration = 0
+            charging_amount = 0
+            electricity_fee = 0
+            service_fee = 0
+            total_fee = 0
+        
+        # 创建充电记录
+        charging_record = ChargingRecord(
+            record_number=f"CHG{queue.id:06d}",
+            user_id=queue.user_id,
+            vehicle_id=queue.vehicle_id,
+            charging_pile_id=queue.charging_pile_id,
+            start_time=queue.start_charging_time or datetime.now(),
+            end_time=datetime.now(),
+            charging_duration=charging_duration,
+            charging_amount=charging_amount,
+            electricity_fee=electricity_fee,
+            service_fee=service_fee,
+            total_fee=total_fee,
+            unit_price=electricity_rate,  # 添加单位电价
+            time_period="normal"  # 添加时段信息
+        )
+        db.add(charging_record)
+        
+        # 释放充电桩
+        if charging_pile:
+            charging_pile.status = ChargingPileStatus.NORMAL
+        
+        # 删除排队记录
+        db.delete(queue)
+        
+        db.commit()
+        
+        return {
+            "message": f"已强制停止 {user_info} 的车辆 {vehicle_info} 在 {pile_info} 的充电",
+            "queue_id": queue_id,
+            "action": "stopped",
+            "charging_record": {
+                "record_number": charging_record.record_number,
+                "duration_hours": round(charging_duration, 2),
+                "amount_kwh": round(charging_amount, 2),
+                "total_fee": round(total_fee, 2)
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"停止充电失败: {str(e)}")
+
+@router.get("/queue/active", summary="获取所有活跃队列")
+async def get_active_queues(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有排队中和充电中的记录（用于管理操作）
+    """
+    queues = db.query(ChargingQueue).filter(
+        ChargingQueue.status.in_([QueueStatus.QUEUING, QueueStatus.CHARGING])
+    ).all()
+    
+    result = []
+    for queue in queues:
+        vehicle = db.query(Vehicle).filter(Vehicle.id == queue.vehicle_id).first()
+        user = db.query(User).filter(User.id == queue.user_id).first()
+        charging_pile = db.query(ChargingPile).filter(ChargingPile.id == queue.charging_pile_id).first()
+        
+        result.append({
+            "id": queue.id,
+            "queue_number": queue.queue_number,
+            "status": queue.status.value,
+            "user": {
+                "id": user.id if user else None,
+                "username": user.username if user else "未知用户"
+            },
+            "vehicle": {
+                "id": vehicle.id if vehicle else None,
+                "license_plate": vehicle.license_plate if vehicle else "未知车辆"
+            },
+            "charging_pile": {
+                "id": charging_pile.id if charging_pile else None,
+                "pile_number": charging_pile.pile_number if charging_pile else None
+            },
+            "queue_time": queue.queue_time,
+            "start_charging_time": queue.start_charging_time,
+            "requested_amount": queue.requested_amount
+        })
+    
+    return result

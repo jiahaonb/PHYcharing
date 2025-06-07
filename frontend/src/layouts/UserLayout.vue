@@ -50,6 +50,10 @@
             <el-icon><Van /></el-icon>
             <span>车辆管理</span>
           </el-menu-item>
+          <el-menu-item index="/user/vehicle-monitoring">
+            <el-icon><Monitor /></el-icon>
+            <span>车辆监控</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
       
@@ -57,6 +61,9 @@
         <router-view />
       </el-main>
     </el-container>
+    
+    <!-- 全局日志组件 -->
+    <GlobalLogger />
   </el-container>
 </template>
 
@@ -65,6 +72,17 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import { ElMessage } from 'element-plus'
 import SystemClock from '@/components/SystemClock.vue'
+import GlobalLogger from '@/components/GlobalLogger.vue'
+import { 
+  User, 
+  ArrowDown, 
+  Odometer, 
+  Lightning, 
+  Clock, 
+  Document, 
+  Van,
+  Monitor
+} from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -127,5 +145,6 @@ const handleCommand = (command) => {
 .layout-main {
   background: #f0f2f5;
   padding: 20px;
+  padding-bottom: 200px; /* 为日志组件留出空间 */
 }
 </style> 

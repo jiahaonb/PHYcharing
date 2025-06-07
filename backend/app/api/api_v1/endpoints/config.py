@@ -1,5 +1,6 @@
 import json
 from typing import List, Dict, Any
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -8,6 +9,7 @@ from app.core.database import get_db
 from app.models.config import SystemConfig
 from app.models.user import User
 from .auth import get_current_user
+from app.services.config_service import config_service
 
 router = APIRouter()
 
@@ -39,8 +41,8 @@ class ConfigResponse(BaseModel):
     description: str = None
     category: str
     is_active: bool
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -148,6 +150,9 @@ async def update_config(
     db.commit()
     db.refresh(config)
     
+    # 清空缓存
+    config_service.invalidate_cache()
+    
     return config
 
 
@@ -189,6 +194,9 @@ async def create_config(
     db.commit()
     db.refresh(config)
     
+    # 清空缓存
+    config_service.invalidate_cache()
+    
     return config
 
 
@@ -208,6 +216,9 @@ async def delete_config(
     
     db.delete(config)
     db.commit()
+    
+    # 清空缓存
+    config_service.invalidate_cache()
     
     return {"message": f"配置项 {config_key} 已删除"}
 
@@ -250,6 +261,9 @@ async def batch_update_configs(
     
     if results:
         db.commit()
+    
+    # 清空缓存
+    config_service.invalidate_cache()
     
     return {
         "success_count": len(results),

@@ -101,6 +101,28 @@
                         </el-tag>
                       </template>
                     </el-table-column>
+                    <el-table-column label="操作" width="120" fixed="right">
+                      <template #default="scope">
+                        <el-button 
+                          v-if="scope.row.status === 'waiting'"
+                          size="small" 
+                          type="warning" 
+                          @click="cancelQueue(scope.row)"
+                          :loading="scope.row.cancelling"
+                        >
+                          取消排队
+                        </el-button>
+                        <el-button 
+                          v-if="scope.row.status === 'charging'"
+                          size="small" 
+                          type="danger" 
+                          @click="stopCharging(scope.row)"
+                          :loading="scope.row.stopping"
+                        >
+                          停止充电
+                        </el-button>
+                      </template>
+                    </el-table-column>
                   </el-table>
                 </div>
                 
@@ -140,7 +162,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, UserFilled, Lightning, Clock, Timer } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 
@@ -188,6 +210,7 @@ const refreshData = () => {
 const getPileStatusType = (status) => {
   const statusMap = {
     'normal': 'success',
+    'idle': 'success',
     'charging': 'warning',
     'fault': 'danger',
     'maintenance': 'info'
@@ -199,11 +222,12 @@ const getPileStatusType = (status) => {
 const getPileStatusText = (status) => {
   const statusMap = {
     'normal': '空闲',
+    'idle': '空闲',
     'charging': '充电中',
     'fault': '故障',
     'maintenance': '维护中'
   }
-  return statusMap[status] || '未知'
+  return statusMap[status] || `未知(${status})`
 }
 
 // 获取状态类型
@@ -245,6 +269,92 @@ const formatTime = (timeStr) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 管理操作方法
+const cancelQueue = async (queueItem) => {
+  if (!queueItem.queue_id) {
+    ElMessage.error('找不到排队记录ID')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要取消用户 "${queueItem.username}" 的车辆 "${queueItem.vehicle_info}" 的排队吗？`,
+      '确认取消排队',
+      {
+        type: 'warning',
+        confirmButtonText: '确认取消',
+        cancelButtonText: '保留排队'
+      }
+    )
+
+    // 设置加载状态
+    queueItem.cancelling = true
+
+    await api.delete(`/admin/queue/${queueItem.queue_id}/cancel`)
+    
+    ElMessage.success(`已取消 ${queueItem.username} 的排队`)
+    console.log(`✅ 取消排队成功: ${queueItem.username}`)
+    
+    // 刷新数据
+    await fetchQueueData()
+    
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('取消排队失败:', error)
+      ElMessage.error('取消排队失败: ' + (error.response?.data?.detail || error.message))
+    }
+  } finally {
+    queueItem.cancelling = false
+  }
+}
+
+const stopCharging = async (queueItem) => {
+  if (!queueItem.queue_id) {
+    ElMessage.error('找不到充电记录ID')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要强制停止用户 "${queueItem.username}" 的车辆 "${queueItem.vehicle_info}" 的充电吗？\n系统将自动计算费用并生成充电记录。`,
+      '确认停止充电',
+      {
+        type: 'warning',
+        confirmButtonText: '确认停止',
+        cancelButtonText: '继续充电'
+      }
+    )
+
+    // 设置加载状态
+    queueItem.stopping = true
+
+    const response = await api.post(`/admin/queue/${queueItem.queue_id}/stop-charging`)
+    
+    ElMessage.success(`已停止 ${queueItem.username} 的充电`)
+    console.log(`✅ 停止充电成功: ${queueItem.username}`, response)
+    
+    // 显示充电记录信息
+    if (response.charging_record) {
+      ElMessage.info(
+        `充电记录已生成：${response.charging_record.record_number}，` +
+        `充电时长 ${response.charging_record.duration_hours}h，` +
+        `费用 ¥${response.charging_record.total_fee}`
+      )
+    }
+    
+    // 刷新数据
+    await fetchQueueData()
+    
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('停止充电失败:', error)
+      ElMessage.error('停止充电失败: ' + (error.response?.data?.detail || error.message))
+    }
+  } finally {
+    queueItem.stopping = false
+  }
 }
 
 onMounted(() => {
