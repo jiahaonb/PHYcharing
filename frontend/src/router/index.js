@@ -84,6 +84,16 @@ const routes = [
         path: 'queue-monitoring',
         name: 'QueueMonitoring',
         component: () => import('@/views/admin/QueueMonitoring.vue')
+      },
+      {
+        path: 'charging-scene',
+        name: 'ChargingSceneAnimation',
+        component: () => import('@/views/admin/ChargingSceneAnimation.vue')
+      },
+      {
+        path: 'config',
+        name: 'ConfigManagement',
+        component: () => import('@/views/admin/ConfigManagement.vue')
       }
     ]
   }

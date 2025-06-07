@@ -34,6 +34,11 @@
             <span>队列监控</span>
           </el-menu-item>
           
+          <el-menu-item index="/admin/charging-scene">
+            <el-icon><VideoPlay /></el-icon>
+            <span>充电场景动画</span>
+          </el-menu-item>
+          
           <el-menu-item index="/admin/reports">
             <el-icon><DataAnalysis /></el-icon>
             <span>数据报表</span>
@@ -42,6 +47,11 @@
           <el-menu-item index="/admin/vehicles">
             <el-icon><Van /></el-icon>
             <span>车辆管理</span>
+          </el-menu-item>
+          
+          <el-menu-item index="/admin/config">
+            <el-icon><Setting /></el-icon>
+            <span>系统配置</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -96,7 +106,9 @@ import {
   DataAnalysis, 
   User, 
   ArrowDown,
-  Van 
+  Van,
+  VideoPlay,
+  Setting 
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -112,8 +124,10 @@ const getPageTitle = () => {
     '/admin/piles': '充电桩管理',
     '/admin/monitoring': '实时监控',
     '/admin/queue-monitoring': '队列监控',
+    '/admin/charging-scene': '充电场景动画',
     '/admin/reports': '数据报表',
-    '/admin/vehicles': '车辆管理'
+    '/admin/vehicles': '车辆管理',
+    '/admin/config': '系统配置'
   }
   return routeMap[router.currentRoute.value.path] || '管理后台'
 }
