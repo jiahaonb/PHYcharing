@@ -345,7 +345,7 @@
           </el-descriptions-item>
 
           <el-descriptions-item label="电池容量">
-            {{ selectedVehicle.battery_capacity || '未设置' }} kWh
+            {{ selectedVehicle.battery_capacity || '未设置' }} 度
           </el-descriptions-item>
           <el-descriptions-item label="当前状态">
             <el-tag :type="getVehicleStatusType(selectedVehicle.status)">

@@ -45,7 +45,7 @@
             </div>
             <div class="info-item">
               <span class="label">电池容量:</span>
-              <span class="value">{{ vehicle.battery_capacity }}kWh</span>
+                              <span class="value">{{ vehicle.battery_capacity }}度</span>
             </div>
             <div class="info-item">
               <span class="label">车主:</span>
@@ -62,7 +62,7 @@
             <div class="queue-number">排队号: {{ vehicle.queue_info.queue_number }}</div>
             <div class="queue-details">
               <span>模式: {{ vehicle.queue_info.charging_mode === 'fast' ? '快充' : '慢充' }}</span>
-              <span>需求: {{ vehicle.queue_info.requested_amount }}kWh</span>
+                              <span>需求: {{ vehicle.queue_info.requested_amount }}度</span>
             </div>
           </div>
 
@@ -113,7 +113,7 @@
               <el-col :span="12">
                 <div class="detail-item">
                   <label>电池容量:</label>
-                  <span>{{ vehicleDetail.battery_capacity }}kWh</span>
+                  <span>{{ vehicleDetail.battery_capacity }}度</span>
                 </div>
               </el-col>
               <el-col :span="12">
@@ -139,7 +139,7 @@
           >
             <el-table :data="vehicleDetail.charging_history" size="small">
               <el-table-column prop="record_number" label="记录号" width="120"/>
-              <el-table-column prop="charging_amount" label="充电量(kWh)" width="100"/>
+              <el-table-column prop="charging_amount" label="充电量(度)" width="100"/>
               <el-table-column prop="charging_duration" label="时长(h)" width="80"/>
               <el-table-column prop="total_fee" label="费用(元)" width="80"/>
               <el-table-column prop="end_time" label="结束时间" width="150">
@@ -181,7 +181,7 @@
                       style="width: 100%"
                       @change="calculateEstimates"
                     />
-                    <div class="form-hint">最大: {{ vehicleDetail.battery_capacity }}kWh</div>
+                    <div class="form-hint">最大: {{ vehicleDetail.battery_capacity }}度</div>
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -318,7 +318,7 @@ const chargingRules = {
   ],
   requested_amount: [
     { required: true, message: '请输入充电量', trigger: 'blur' },
-    { type: 'number', min: 1, message: '充电量不能小于1kWh', trigger: 'blur' }
+    { type: 'number', min: 1, message: '充电量不能小于1度', trigger: 'blur' }
   ]
 }
 
@@ -596,7 +596,7 @@ const calculateEstimates = () => {
   }
   
   // 计算充电时间：充电量/充电效率 = 时间
-  // 例如：50kWh / 50kW = 1h = 60分钟
+  // 例如：50度 / 50kW = 1h = 60分钟
   const power = chargingForm.charging_mode === 'fast' 
     ? chargingConfig.value.fast_charging_power 
     : chargingConfig.value.trickle_charging_power

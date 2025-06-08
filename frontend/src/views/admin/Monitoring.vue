@@ -3,7 +3,7 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>实时监控</span>
+          <span>充电桩监控</span>
           <el-button type="primary" @click="refreshData">
             <el-icon><Refresh /></el-icon>
             刷新
@@ -104,13 +104,18 @@
                 />
                 <div class="queue-info">
                   <small style="color: #909399;">
-                    <!-- {{ queue.chargingMode === 'fast' ? '快充模式 - 专桩排队' : '慢充模式 - 专桩排队' }} -->
-                      当前车辆: {{ queue.vehicle_info }}
+                    当前车辆: {{ queue.currentVehicle || '无数据' }}
                     <span v-if="queue.currentUser" style="margin-left: 10px;">
                       当前用户: {{ queue.currentUser }}
                     </span>
+                    <span v-else style="margin-left: 10px;">
+                      当前用户: 无数据
+                    </span>
                     <span v-if="queue.queueLength > 0" style="margin-left: 10px;">
                       预计等待: {{ Math.round(queue.estimatedWaitTime) }}分钟
+                    </span>
+                    <span v-else style="margin-left: 10px;">
+                      预计等待: 0分钟
                     </span>
                   </small>
                 </div>
@@ -287,19 +292,43 @@ const fetchQueueData = async () => {
     const pileQueues = await api.get('/admin/queue/piles')
     
     queueData.value = pileQueues.map((pileQueue) => {
+      // 获取当前充电中的车辆信息
+      let currentVehicle = '无数据'
+      let currentUser = '无数据'
+      
+      if (pileQueue.queue_details && pileQueue.queue_details.length > 0) {
+        // 找到正在充电的车辆（状态为charging的排在第一位）
+        const chargingVehicle = pileQueue.queue_details.find(detail => detail.status === 'charging')
+        if (chargingVehicle) {
+          currentVehicle = chargingVehicle.vehicle_info || '无数据'
+          currentUser = chargingVehicle.username || '无数据'
+        } else if (pileQueue.current_user) {
+          // 如果没有找到charging状态的，但有current_user，使用current_user
+          currentUser = pileQueue.current_user
+          // 尝试从队列中找到对应的车辆信息
+          const firstInQueue = pileQueue.queue_details[0]
+          if (firstInQueue) {
+            currentVehicle = firstInQueue.vehicle_info || '无数据'
+          }
+        }
+      } else if (pileQueue.current_user) {
+        currentUser = pileQueue.current_user
+      }
+      
       return {
         pileId: pileQueue.pile_name.split('-')[1] || pileQueue.pile_id, // 提取桩编号
         pileName: pileQueue.pile_name,
         queueLength: pileQueue.queue_length,
         chargingMode: pileQueue.pile_name.includes('快充') ? 'fast' : 'trickle',
         pileStatus: pileQueue.pile_status,
-        currentUser: pileQueue.current_user,
+        currentUser: currentUser,
+        currentVehicle: currentVehicle,
         estimatedWaitTime: pileQueue.estimated_wait_time,
         queueDetails: pileQueue.queue_details || []
       }
     })
     
-    // console.log('排队数据已更新:', queueData.value)
+    console.log('排队数据已更新:', queueData.value)
   } catch (error) {
     console.error('获取队列数据失败:', error)
     // 如果获取失败，尝试备用方案
@@ -311,7 +340,8 @@ const fetchQueueData = async () => {
         queueLength: 0,
         chargingMode: pile.charging_mode,
         pileStatus: pile.status,
-        currentUser: null,
+        currentUser: '无数据',
+        currentVehicle: '无数据',
         estimatedWaitTime: 0,
         queueDetails: []
       }))

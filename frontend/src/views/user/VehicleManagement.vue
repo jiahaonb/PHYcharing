@@ -14,7 +14,7 @@
       <el-table :data="vehicles" style="width: 100%; min-height: 400px;" empty-text="暂无车辆，请添加车辆">
         <el-table-column prop="license_plate" label="车牌号" width="120" />
         <el-table-column prop="model" label="型号" width="180" />
-        <el-table-column prop="battery_capacity" label="电池容量(kWh)" width="130" />
+        <el-table-column prop="battery_capacity" label="电池容量(度)" width="130" />
         <el-table-column label="操作" width="150">
           <template #default="scope">
             <el-button size="small" @click="editVehicle(scope.row)">编辑</el-button>
@@ -35,7 +35,7 @@
         </el-form-item>
         <el-form-item label="电池容量" prop="battery_capacity">
           <el-input-number v-model="vehicleForm.battery_capacity" :min="10" :max="200" :precision="1" />
-          <span style="margin-left: 10px;">kWh</span>
+          <span style="margin-left: 10px;">度</span>
         </el-form-item>
       </el-form>
       

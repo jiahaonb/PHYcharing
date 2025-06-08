@@ -60,14 +60,22 @@
         :data="filteredUsers" 
         style="width: 100%" 
         v-loading="loading"
+        element-loading-text="正在加载用户数据..."
+        element-loading-spinner="el-icon-loading"
         empty-text="暂无用户数据"
       >
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" label="用户名" width="150" />
-        <el-table-column prop="email" label="邮箱" width="200" />
-        <el-table-column prop="phone" label="电话" width="150">
+        <el-table-column label="用户信息" width="280">
           <template #default="scope">
-            {{ scope.row.phone || '未设置' }}
+            <div class="user-info-cell">
+              <div class="user-main">
+                <div class="username">{{ scope.row.username }}</div>
+                <div class="user-details">
+                  <div class="email">{{ scope.row.email }}</div>
+                  <div class="phone">{{ scope.row.phone || '未设置电话' }}</div>
+                </div>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="角色" width="100">
@@ -77,22 +85,31 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="车辆数量" width="100">
+        <el-table-column label="车辆数量" width="120">
           <template #default="scope">
-            <el-badge :value="scope.row.vehicle_count" class="item">
-              <el-icon><Van /></el-icon>
-            </el-badge>
+            <div class="vehicle-info-cell">
+              <el-badge :value="scope.row.vehicle_count || 0" class="item vehicle-badge">
+                <el-icon size="24"><Van /></el-icon>
+              </el-badge>
+              <div class="vehicle-text">
+                <div class="vehicle-count">{{ scope.row.vehicle_count || 0 }}辆</div>
+                <div class="vehicle-label">车辆</div>
+              </div>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="注册时间" width="180">
+        <el-table-column label="注册时间" width="160">
           <template #default="scope">
-            {{ formatDateTime(scope.row.created_at) }}
+            <div class="time-cell">
+              <div class="date">{{ formatDate(scope.row.created_at) }}</div>
+              <div class="time">{{ formatTime(scope.row.created_at) }}</div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="scope">
-            <el-tag :type="scope.row.is_active ? 'success' : 'danger'">
-              {{ scope.row.is_active ? '正常' : '禁用' }}
+            <el-tag :type="(scope.row.is_active !== false) ? 'success' : 'danger'">
+              {{ (scope.row.is_active !== false) ? '正常' : '禁用' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -104,10 +121,10 @@
             </el-button>
             <el-button 
               size="small" 
-              :type="scope.row.is_active ? 'warning' : 'success'"
+              :type="(scope.row.is_active !== false) ? 'warning' : 'success'"
               @click="toggleUserStatus(scope.row)"
             >
-              {{ scope.row.is_active ? '禁用' : '启用' }}
+              {{ (scope.row.is_active !== false) ? '禁用' : '启用' }}
             </el-button>
           </template>
         </el-table-column>
@@ -160,8 +177,8 @@
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="状态">
-                  <el-tag :type="selectedUser.is_active ? 'success' : 'danger'">
-                    {{ selectedUser.is_active ? '正常' : '禁用' }}
+                  <el-tag :type="(selectedUser.is_active !== false) ? 'success' : 'danger'">
+                    {{ (selectedUser.is_active !== false) ? '正常' : '禁用' }}
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="注册时间">
@@ -178,7 +195,7 @@
               </template>
               <el-descriptions :column="1" border>
                 <el-descriptions-item label="车辆数量">
-                  {{ selectedUser.vehicle_count }}辆
+                  {{ selectedUser.vehicle_count || 0 }}辆
                 </el-descriptions-item>
                 <el-descriptions-item label="充电次数">
                   {{ selectedUser.charging_count || 0 }}次
@@ -212,7 +229,7 @@
             </el-table-column>
             <el-table-column prop="battery_capacity" label="电池容量" width="120">
               <template #default="scope">
-                {{ scope.row.battery_capacity }}kWh
+                {{ scope.row.battery_capacity }}度
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="添加时间" width="180">
@@ -250,7 +267,7 @@
                 {{ scope.row.vehicle?.license_plate }}
               </template>
             </el-table-column>
-            <el-table-column prop="charging_amount" label="充电量(kWh)" width="100" />
+                          <el-table-column prop="charging_amount" label="充电量(度)" width="100" />
             <el-table-column prop="total_fee" label="总费用" width="100">
               <template #default="scope">
                 <span class="total-fee">
@@ -357,11 +374,15 @@ const fetchUsers = async () => {
   loading.value = true
   try {
     const response = await api.get('/admin/users')
-    users.value = response.map(user => ({
-      ...user,
-      vehicle_count: user.vehicles ? user.vehicles.length : 0
-    }))
+    console.log('API响应数据:', response) // 调试信息
+    
+    // 直接使用后端返回的数据，不做额外处理
+    users.value = response || []
+    
     console.log('获取用户列表成功，数量:', users.value.length)
+    if (users.value.length > 0) {
+      console.log('用户数据样例:', users.value[0]) // 调试信息
+    }
   } catch (error) {
     console.error('获取用户列表失败:', error)
     ElMessage.error('获取用户列表失败')
@@ -450,7 +471,8 @@ const getOrderStatusText = (status) => {
 }
 
 const toggleUserStatus = async (user) => {
-  const action = user.is_active ? '禁用' : '启用'
+  const isActive = user.is_active !== false
+  const action = isActive ? '禁用' : '启用'
   try {
     await ElMessageBox.confirm(
       `确定要${action}用户 "${user.username}" 吗？`,
@@ -463,7 +485,7 @@ const toggleUserStatus = async (user) => {
     )
     
     await api.put(`/admin/users/${user.id}/status`, {
-      is_active: !user.is_active
+      is_active: !isActive
     })
     
     ElMessage.success(`用户${action}成功`)
@@ -500,6 +522,23 @@ const formatDateTime = (dateStr) => {
   })
 }
 
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+}
+
+const formatTime = (dateStr) => {
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
 // 生命周期
 onMounted(() => {
   fetchUsers()
@@ -508,28 +547,38 @@ onMounted(() => {
 
 <style scoped>
 .user-management {
-  padding: 0;
+  padding: 20px;
+  min-height: 100vh;
+  background-color: #f5f7fa;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  font-weight: 600;
+  color: #303133;
 }
 
 .search-filters {
   margin-bottom: 20px;
+  padding: 16px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .pagination {
   margin-top: 20px;
   display: flex;
   justify-content: center;
+  padding: 20px 0;
 }
 
 .user-detail {
   max-height: 600px;
   overflow-y: auto;
+  padding: 10px 0;
 }
 
 .item {
@@ -539,5 +588,191 @@ onMounted(() => {
 .total-fee {
   color: #e6a23c;
   font-weight: bold;
+}
+
+/* 表格样式优化 */
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+:deep(.el-table__header) {
+  background-color: #fafafa;
+}
+
+:deep(.el-table__row) {
+  height: 80px; /* 增加行高 */
+}
+
+:deep(.el-table__row:hover > td) {
+  background-color: #f5f7fa !important;
+}
+
+:deep(.el-table td) {
+  padding: 16px 12px !important; /* 增加单元格内边距 */
+  vertical-align: middle;
+}
+
+:deep(.el-table th) {
+  padding: 16px 12px !important; /* 增加表头内边距 */
+  height: 60px;
+}
+
+/* 卡片样式优化 */
+:deep(.el-card) {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+:deep(.el-card__header) {
+  background-color: #fafafa;
+  border-bottom: 1px solid #ebeef5;
+}
+
+/* 对话框样式优化 */
+:deep(.el-dialog) {
+  border-radius: 8px;
+}
+
+:deep(.el-dialog__header) {
+  background-color: #fafafa;
+  border-radius: 8px 8px 0 0;
+}
+
+/* 按钮样式优化 */
+:deep(.el-button) {
+  border-radius: 6px;
+}
+
+/* 标签样式优化 */
+:deep(.el-tag) {
+  border-radius: 4px;
+}
+
+/* 分页样式优化 */
+:deep(.el-pagination) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .user-management {
+    padding: 10px;
+  }
+  
+  :deep(.el-table) {
+    font-size: 12px;
+  }
+  
+  .search-filters {
+    padding: 12px;
+  }
+  
+  :deep(.el-col) {
+    margin-bottom: 10px;
+  }
+}
+
+/* 空状态优化 */
+:deep(.el-table__empty-block) {
+  padding: 40px 0;
+}
+
+:deep(.el-empty) {
+  padding: 40px 0;
+}
+
+/* 加载状态优化 */
+:deep(.el-loading-mask) {
+  border-radius: 8px;
+}
+
+/* 用户信息单元格样式 */
+.user-info-cell {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.user-main {
+  flex: 1;
+}
+
+.username {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.email {
+  font-size: 13px;
+  color: #606266;
+}
+
+.phone {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 车辆信息单元格样式 */
+.vehicle-info-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.vehicle-badge {
+  flex-shrink: 0;
+}
+
+.vehicle-text {
+  text-align: center;
+  margin-left: 8px;
+}
+
+.vehicle-count {
+  font-size: 16px;
+  font-weight: 600;
+  color: #409eff;
+  margin-bottom: 2px;
+}
+
+.vehicle-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 时间显示样式 */
+.time-cell {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.date {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 2px;
+}
+
+.time {
+  font-size: 12px;
+  color: #909399;
 }
 </style> 

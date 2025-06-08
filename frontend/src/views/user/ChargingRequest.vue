@@ -53,7 +53,7 @@
                 @change="calculateEstimates"
               />
               <div class="amount-info">
-                <span>单位: 度 (kWh)</span>
+                <span>单位: 度</span>
                 <span v-if="selectedVehicle">
                   最大: {{ selectedVehicle.battery_capacity }}度
                 </span>
@@ -294,7 +294,7 @@ const calculateEstimates = () => {
   }
   
   // 计算充电时间：充电量/充电效率 = 时间
-  // 例如：50kWh / 50kW = 1h = 60分钟
+              // 例如：50度 / 50kW = 1h = 60分钟
   const power = requestForm.charging_mode === 'fast' 
     ? chargingPowerConfig.value.fast_charging_power 
     : chargingPowerConfig.value.trickle_charging_power

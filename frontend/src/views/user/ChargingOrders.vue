@@ -98,7 +98,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="charging_amount" label="充电电量(kWh)" width="120" />
+        <el-table-column prop="charging_amount" label="充电电量(度)" width="120" />
         <el-table-column prop="charging_duration" label="充电时长" width="120">
           <template #default="scope">
             {{ formatDuration(scope.row.charging_duration) }}
@@ -185,7 +185,7 @@
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="充电电量">
-            {{ selectedOrder.charging_amount }} kWh
+            {{ selectedOrder.charging_amount }} 度
           </el-descriptions-item>
           <el-descriptions-item label="充电时长">
             {{ formatDuration(selectedOrder.charging_duration) }}
@@ -197,7 +197,7 @@
             {{ selectedOrder.end_time ? formatDateTime(selectedOrder.end_time) : '未结束' }}
           </el-descriptions-item>
           <el-descriptions-item label="电费单价">
-            {{ selectedOrder.unit_price ? `¥${selectedOrder.unit_price}/kWh` : '-' }}
+            {{ selectedOrder.unit_price ? `¥${selectedOrder.unit_price}/度` : '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="时段">
             {{ selectedOrder.time_period || '-' }}

@@ -14,7 +14,7 @@
       <el-table :data="vehicles" style="width: 100%; min-height: 400px;" v-loading="loading" empty-text="暂无车辆数据">
         <el-table-column prop="license_plate" label="车牌号" width="120" />
         <el-table-column prop="model" label="型号" width="180" />
-        <el-table-column prop="battery_capacity" label="电池容量(kWh)" width="130" />
+        <el-table-column prop="battery_capacity" label="电池容量(度)" width="130" />
         <el-table-column label="当前状态" width="100">
           <template #default="scope">
             <el-tag :type="getStatusType(scope.row.status)" size="small">
@@ -58,7 +58,7 @@
             {{ selectedVehicle.model || '未设置' }}
           </el-descriptions-item>
           <el-descriptions-item label="电池容量">
-            {{ selectedVehicle.battery_capacity }} kWh
+            {{ selectedVehicle.battery_capacity }} 度
           </el-descriptions-item>
           <el-descriptions-item label="当前状态">
             <el-tag :type="getStatusType(selectedVehicle.status)" size="small">

@@ -11,7 +11,7 @@
         <el-table-column prop="startTime" label="开始时间" width="100" />
         <el-table-column prop="endTime" label="结束时间" width="100" />
         <el-table-column prop="duration" label="充电时长" width="100" />
-        <el-table-column prop="energy" label="充电量(kWh)" width="120" />
+        <el-table-column prop="energy" label="充电量(度)" width="120" />
         <el-table-column prop="cost" label="费用(元)" width="100" />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="scope">
