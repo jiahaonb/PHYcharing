@@ -30,15 +30,18 @@ class QueueResponse(BaseModel):
 class ChargingRecordResponse(BaseModel):
     id: int
     record_number: str
+    queue_number: str
+    license_plate: str
     charging_amount: float
     charging_duration: Optional[float] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    electricity_fee: Optional[float] = None
-    service_fee: Optional[float] = None
-    total_fee: Optional[float] = None
+    electricity_fee: float
+    service_fee: float
+    total_fee: float
     unit_price: Optional[float] = None
     time_period: Optional[str] = None
+    charging_mode: str
     status: str = "created"
     created_at: datetime
     

@@ -58,6 +58,22 @@ class ChargingScheduleService:
         # 生成排队号码
         queue_number = self.generate_queue_number(charging_mode)
         
+        # 获取车辆信息（获取车牌号）
+        from app.models.user import Vehicle
+        vehicle = self.db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+        if not vehicle:
+            raise Exception("车辆信息不存在")
+        
+        # 立即创建充电订单记录
+        charging_record = self._create_charging_order(
+            user_id=user_id,
+            vehicle_id=vehicle_id,
+            queue_number=queue_number,
+            license_plate=vehicle.license_plate,
+            charging_mode=charging_mode,
+            charging_amount=requested_amount
+        )
+        
         # 创建排队记录
         queue_record = ChargingQueue(
             queue_number=queue_number,
@@ -223,7 +239,18 @@ class ChargingScheduleService:
         if queue_record and queue_record.status == QueueStatus.QUEUING:
             # 更新队列状态
             queue_record.status = QueueStatus.CHARGING
-            queue_record.start_charging_time = datetime.now()
+            start_time = datetime.now()
+            queue_record.start_charging_time = start_time
+            
+            # 同步更新充电记录的启动时间和充电桩信息
+            charging_record = self.db.query(ChargingRecord).filter(
+                ChargingRecord.queue_number == queue_record.queue_number
+            ).first()
+            
+            if charging_record:
+                charging_record.start_time = start_time
+                charging_record.charging_pile_id = queue_record.charging_pile_id
+                charging_record.status = "charging"
             
             # 同步更新充电桩状态为正在充电
             if queue_record.charging_pile_id:
@@ -239,7 +266,7 @@ class ChargingScheduleService:
             self.db.commit()
     
     def complete_charging(self, queue_id: int) -> ChargingRecord:
-        """完成充电并生成详单"""
+        """完成充电并更新充电详单"""
         queue_record = self.db.query(ChargingQueue).filter(
             ChargingQueue.id == queue_id
         ).first()
@@ -265,23 +292,26 @@ class ChargingScheduleService:
             actual_amount, start_time, end_time
         )
         
-        # 创建充电记录
-        record_number = self.generate_record_number()
-        charging_record = ChargingRecord(
-            record_number=record_number,
-            user_id=queue_record.user_id,
-            vehicle_id=queue_record.vehicle_id,
-            charging_pile_id=queue_record.charging_pile_id,
-            charging_amount=actual_amount,
-            charging_duration=actual_duration,
-            start_time=start_time,
-            end_time=end_time,
-            electricity_fee=electricity_fee,
-            service_fee=service_fee,
-            total_fee=total_fee,
-            unit_price=unit_price,
-            time_period=time_period
-        )
+        # 查找并更新已有的充电记录
+        charging_record = self.db.query(ChargingRecord).filter(
+            ChargingRecord.queue_number == queue_record.queue_number
+        ).first()
+        
+        if not charging_record:
+            raise Exception("找不到对应的充电订单记录")
+        
+        # 更新充电记录
+        charging_record.charging_pile_id = queue_record.charging_pile_id
+        charging_record.charging_amount = actual_amount
+        charging_record.charging_duration = actual_duration
+        charging_record.start_time = start_time
+        charging_record.end_time = end_time
+        charging_record.electricity_fee = electricity_fee
+        charging_record.service_fee = service_fee
+        charging_record.total_fee = total_fee
+        charging_record.unit_price = unit_price
+        charging_record.time_period = time_period
+        charging_record.status = "completed"
         
         # 更新充电桩统计
         pile.total_charging_count += 1
@@ -303,7 +333,6 @@ class ChargingScheduleService:
             pile.status = ChargingPileStatus.NORMAL
             print(f"🔋 充电桩 {pile.pile_number} 状态恢复为正常")
         
-        self.db.add(charging_record)
         self.db.commit()
         
         if next_vehicle:
@@ -334,17 +363,68 @@ class ChargingScheduleService:
         
         return electricity_fee, service_fee, total_fee, unit_price, time_period
     
-    def generate_record_number(self) -> str:
+    def generate_record_number(self, charging_mode: ChargingMode) -> str:
         """生成详单编号"""
         now = datetime.now()
-        timestamp = now.strftime("%Y%m%d%H%M%S")
         
-        # 获取今天的记录数量
+        # 充电模式前缀
+        mode_prefix = "KUAI" if charging_mode == ChargingMode.FAST else "MAN"
+        
+        # 日期 (8位数)
+        date_str = now.strftime("%Y%m%d")
+        
+        # 时间 (6位数)
+        time_str = now.strftime("%H%M%S")
+        
+        # 获取今天的记录数量作为序号
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_count = self.db.query(ChargingRecord).filter(
-            ChargingRecord.created_at >= now.replace(hour=0, minute=0, second=0, microsecond=0)
+            ChargingRecord.created_at >= today_start
         ).count()
         
-        return f"CR{timestamp}{today_count + 1:04d}"
+        # 四位序号，从0001开始
+        sequence = f"{today_count + 1:04d}"
+        
+        # 组合订单编号：充电模式 + 日期8位 + 时间6位 + 序号4位
+        return f"{mode_prefix}{date_str}{time_str}{sequence}"
+    
+    def _create_charging_order(self, user_id: int, vehicle_id: int, queue_number: str, 
+                              license_plate: str, charging_mode: ChargingMode, 
+                              charging_amount: float) -> ChargingRecord:
+        """创建充电订单记录"""
+        # 生成订单编号
+        record_number = self.generate_record_number(charging_mode)
+        
+        # 预估费用（使用当前时段计算）
+        current_time = datetime.now()
+        electricity_fee, service_fee, total_fee, unit_price, time_period = self.calculate_fees(
+            charging_amount, current_time, current_time
+        )
+        
+        # 创建充电订单记录
+        charging_record = ChargingRecord(
+            record_number=record_number,            # 1. 订单编号
+            queue_number=queue_number,              # 2. 排队号
+            user_id=user_id,
+            vehicle_id=vehicle_id,
+            license_plate=license_plate,            # 14. 车牌号
+            charging_pile_id=None,                  # 4. 充电桩编号（开始为NULL）
+            charging_amount=charging_amount,        # 5. 充电电量
+            charging_duration=None,                 # 6. 充电时长（开始为NULL）
+            start_time=None,                       # 7. 启动时间（开始为NULL）
+            end_time=None,                         # 8. 停止时间（开始为NULL）
+            electricity_fee=electricity_fee,       # 9. 充电费用
+            service_fee=service_fee,               # 10. 服务费用
+            total_fee=total_fee,                   # 11. 总费用
+            unit_price=unit_price,
+            time_period=time_period,
+            charging_mode=charging_mode,           # 13. 充电模式
+            status="created"
+            # created_at 自动生成                   # 3. 订单生成时间
+        )
+        
+        self.db.add(charging_record)
+        return charging_record
     
     def modify_charging_request(self, queue_id: int, new_mode: Optional[ChargingMode] = None, 
                                new_amount: Optional[float] = None):

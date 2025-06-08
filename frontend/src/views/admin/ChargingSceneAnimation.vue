@@ -211,6 +211,7 @@
                             <el-icon><Van /></el-icon>
                           </div>
                           <div class="vehicle-plate">{{ pile.chargingVehicle.license_plate }}</div>
+                          <div class="charging-time">{{ getChargingTime(pile.chargingVehicle) }}</div>
                           <div class="charging-indicator">
                             <el-icon class="charging-icon"><Lightning /></el-icon>
                           </div>
@@ -285,6 +286,7 @@
                             <el-icon><Van /></el-icon>
                           </div>
                           <div class="vehicle-plate">{{ pile.chargingVehicle.license_plate }}</div>
+                          <div class="charging-time">{{ getChargingTime(pile.chargingVehicle) }}</div>
                           <div class="charging-indicator">
                             <el-icon class="charging-icon"><More /></el-icon>
                           </div>
@@ -378,6 +380,83 @@
           </el-descriptions>
         </div>
 
+        <!-- 充电详单信息 -->
+        <div v-if="selectedVehicleOrder" class="charging-order-info">
+          <h4>充电详单信息</h4>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="订单编号" label-class-name="order-label">
+              <span class="order-number">{{ selectedVehicleOrder.record_number && selectedVehicleOrder.record_number !== 'N/A' ? selectedVehicleOrder.record_number : '暂无订单' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="排队号" label-class-name="queue-label">
+              <span class="queue-number">{{ selectedVehicleOrder.queue_number }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="车牌号码">
+              <strong>{{ selectedVehicleOrder.license_plate || selectedVehicle.license_plate }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="充电模式">
+              <el-tag :type="selectedVehicleOrder.charging_mode === 'fast' ? 'success' : 'warning'" size="small">
+                {{ selectedVehicleOrder.charging_mode === 'fast' ? '快充' : '慢充' }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="申请充电量">
+              <strong>{{ selectedVehicleOrder.charging_amount }} 度</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="订单状态">
+              <el-tag :type="getOrderStatusType(selectedVehicleOrder.queue_status || selectedVehicleOrder.status)" size="small">
+                {{ getOrderStatusText(selectedVehicleOrder.queue_status || selectedVehicleOrder.status) }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="订单创建时间">
+              {{ formatTime(selectedVehicleOrder.created_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="分配充电桩" v-if="selectedVehicleOrder.charging_pile">
+              <el-tag type="info" size="small">{{ selectedVehicleOrder.charging_pile.pile_number }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="开始充电时间" v-if="selectedVehicleOrder.start_time">
+              {{ formatTime(selectedVehicleOrder.start_time) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="结束充电时间" v-if="selectedVehicleOrder.end_time">
+              {{ formatTime(selectedVehicleOrder.end_time) }}
+            </el-descriptions-item>
+            
+            <!-- 预计充电时长/已充电时长 -->
+            <el-descriptions-item label="充电时长">
+              <div class="charging-duration-info">
+                <!-- 如果正在充电，显示实时时长 -->
+                <div v-if="selectedVehicleOrder.charging_duration !== null && selectedVehicleOrder.charging_duration !== undefined">
+                  <el-tag type="success" size="small">已充电 {{ formatDuration(selectedVehicleOrder.charging_duration) }}</el-tag>
+                </div>
+                <!-- 如果有预计完成时间，显示预计总时长 -->
+                <div v-if="getEstimatedDuration(selectedVehicleOrder)" class="estimated-duration">
+                  <el-tag type="warning" size="small">预计总时长 {{ getEstimatedDuration(selectedVehicleOrder) }}</el-tag>
+                </div>
+                <!-- 如果没有时长信息，显示基于充电量的预估 -->
+                <div v-if="!selectedVehicleOrder.charging_duration && !getEstimatedDuration(selectedVehicleOrder)" class="estimated-duration">
+                  <el-tag type="info" size="small">预计 {{ getEstimatedDurationByAmount(selectedVehicleOrder) }}</el-tag>
+                </div>
+              </div>
+            </el-descriptions-item>
+            
+            <el-descriptions-item label="预计完成时间" v-if="selectedVehicleOrder.estimated_completion_time">
+              <el-tag type="warning" size="small">{{ formatTime(selectedVehicleOrder.estimated_completion_time) }}</el-tag>
+            </el-descriptions-item>
+            
+            <!-- 费用信息 -->
+            <el-descriptions-item label="充电费用" v-if="selectedVehicleOrder.electricity_fee !== undefined">
+              <strong style="color: #67C23A;">¥{{ selectedVehicleOrder.electricity_fee }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="服务费用" v-if="selectedVehicleOrder.service_fee !== undefined">
+              <strong style="color: #E6A23C;">¥{{ selectedVehicleOrder.service_fee }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="总费用" v-if="selectedVehicleOrder.total_fee !== undefined">
+              <strong style="color: #F56C6C; font-size: 16px;">¥{{ selectedVehicleOrder.total_fee }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="时段电价" v-if="selectedVehicleOrder.time_period && selectedVehicleOrder.unit_price">
+              {{ selectedVehicleOrder.time_period }} (¥{{ selectedVehicleOrder.unit_price }}/度)
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
         <!-- 管理操作区域 -->
         <div v-if="canManageVehicle(selectedVehicle)" class="management-actions">
           <el-divider content-position="left">管理操作</el-divider>
@@ -423,6 +502,7 @@ import {
   Close
 } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { useAuthStore } from '@/store/auth'
 
 // 响应式数据
 const loading = ref(false)
@@ -432,6 +512,7 @@ const chargingPiles = ref([])
 const queueData = ref([])
 const vehicleDetailVisible = ref(false)
 const selectedVehicle = ref(null)
+const selectedVehicleOrder = ref(null)
 const refreshInterval = ref(null)
 
 // 配置参数
@@ -825,7 +906,7 @@ const resetAnimation = () => {
 
 
 
-const showVehicleDetail = (vehicle) => {
+const showVehicleDetail = async (vehicle) => {
   try {
     if (!vehicle || !vehicle.id) {
       console.warn('车辆数据无效:', vehicle)
@@ -840,6 +921,31 @@ const showVehicleDetail = (vehicle) => {
     
     console.log('🚗 显示车辆详情:', vehicle.license_plate)
     selectedVehicle.value = { ...vehicle } // 创建副本，避免引用问题
+    selectedVehicleOrder.value = null // 清空之前的订单信息
+    
+    // 获取充电详单信息（对所有车辆尝试获取）
+    try {
+      console.log('📋 获取车辆充电详单:', vehicle.license_plate)
+      const orderData = await fetchVehicleOrder(vehicle)
+      selectedVehicleOrder.value = orderData // 可能为null，模板会处理
+      
+      if (orderData) {
+        console.log('✅ 获取到充电订单:', {
+          订单编号: orderData.record_number,
+          排队号: orderData.queue_number,
+          车牌号: orderData.license_plate,
+          充电模式: orderData.charging_mode,
+          申请电量: orderData.charging_amount,
+          状态: orderData.status
+        })
+      } else {
+        console.log('ℹ️ 该车辆暂无充电订单信息')
+      }
+    } catch (error) {
+      console.warn('获取充电详单失败:', error)
+      selectedVehicleOrder.value = null
+    }
+    
     vehicleDetailVisible.value = true
   } catch (error) {
     console.error('显示车辆详情失败:', error)
@@ -887,6 +993,281 @@ const getVehicleStatusText = (status) => {
 const formatTime = (timeStr) => {
   if (!timeStr) return ''
   return new Date(timeStr).toLocaleString()
+}
+
+const formatDuration = (duration) => {
+  if (!duration) return ''
+  const hours = Math.floor(duration)
+  const minutes = Math.round((duration - hours) * 60)
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
+  } else {
+    return `${minutes}分钟`
+  }
+}
+
+// 获取充电时间显示（xx分钟）
+const getChargingTime = (vehicle) => {
+  if (!vehicle || !vehicle.queue_id) return ''
+  
+  // 从队列数据中找到对应的充电记录
+  const queueItem = queueData.value.find(q => q.id === vehicle.queue_id)
+  if (!queueItem || queueItem.status !== 'charging' || !queueItem.start_charging_time) {
+    return ''
+  }
+  
+  const startTime = new Date(queueItem.start_charging_time)
+  const now = new Date()
+  const diffMs = now - startTime
+  const diffMinutes = Math.floor(diffMs / (1000 * 60))
+  
+  return `${diffMinutes}分钟`
+}
+
+// 判断车辆是否在队列中或充电中（非暂留区）
+const isVehicleInQueueOrCharging = (vehicle) => {
+  if (!vehicle.queue_id) return false
+  
+  const queueItem = queueData.value.find(q => q.id === vehicle.queue_id)
+  return queueItem && ['waiting', 'queuing', 'charging'].includes(queueItem.status)
+}
+
+// 计算预计充电时长（基于预计完成时间）
+const getEstimatedDuration = (orderData) => {
+  if (!orderData.estimated_completion_time || !orderData.start_time) return null
+  
+  const start = new Date(orderData.start_time)
+  const end = new Date(orderData.estimated_completion_time)
+  const durationHours = (end - start) / (1000 * 60 * 60)
+  
+  if (durationHours > 0) {
+    return formatDuration(durationHours)
+  }
+  return null
+}
+
+// 基于充电量计算预计充电时长
+const getEstimatedDurationByAmount = (orderData) => {
+  if (!orderData.charging_amount || !orderData.charging_mode) return '未知'
+  
+  // 根据充电模式计算预计时长
+  const power = orderData.charging_mode === 'fast' ? 50 : 7 // 快充50kW，慢充7kW
+  const estimatedHours = orderData.charging_amount / power
+  
+  return formatDuration(estimatedHours)
+}
+
+// 获取车辆的充电详单信息
+const fetchVehicleOrder = async (vehicle) => {
+  if (!vehicle.id) {
+    throw new Error('车辆ID不存在')
+  }
+  
+  try {
+    console.log('🔍 获取车辆充电订单信息:', vehicle.license_plate)
+    
+    // 方法1: 首先尝试直接获取充电记录
+    try {
+      console.log('📋 尝试获取充电记录...')
+      const recordsResponse = await api.get('/admin/charging/records')
+      console.log('充电记录API响应:', recordsResponse)
+      
+      if (recordsResponse && Array.isArray(recordsResponse)) {
+        // 查找该车辆的最新充电记录
+        const vehicleRecords = recordsResponse.filter(record => 
+          record.vehicle_id === vehicle.id || record.license_plate === vehicle.license_plate
+        ).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        
+        console.log('找到车辆充电记录:', vehicleRecords.length, '条')
+        
+        if (vehicleRecords.length > 0) {
+          const latestRecord = vehicleRecords[0]
+          console.log('最新充电记录:', latestRecord)
+          
+          // 如果有排队ID，获取队列状态信息
+          let queueInfo = null
+          if (vehicle.queue_id) {
+            queueInfo = queueData.value.find(q => q.id === vehicle.queue_id)
+          } else if (latestRecord.queue_number) {
+            queueInfo = queueData.value.find(q => q.queue_number === latestRecord.queue_number)
+          }
+          
+          const orderData = {
+            ...latestRecord,
+            queue_number: latestRecord.queue_number || (queueInfo ? queueInfo.queue_number : 'N/A'),
+            // 如果正在充电，更新时长信息
+            charging_duration: queueInfo && queueInfo.status === 'charging' && queueInfo.start_charging_time 
+              ? (new Date() - new Date(queueInfo.start_charging_time)) / (1000 * 60 * 60)
+              : latestRecord.charging_duration,
+            // 队列信息
+            queue_status: queueInfo ? queueInfo.status : latestRecord.status,
+            estimated_completion_time: queueInfo ? queueInfo.estimated_completion_time : null,
+            charging_pile: queueInfo && queueInfo.charging_pile_id ? { pile_number: `桩${queueInfo.charging_pile_id}` } : null
+          }
+          
+          console.log('✅ 构造的订单数据:', orderData)
+          return orderData
+        }
+      }
+    } catch (error) {
+      console.warn('获取充电记录失败:', error)
+    }
+    
+         // 方法2: 如果没有充电记录，但有queue_id，尝试通过API获取详细信息
+     if (vehicle.queue_id) {
+       try {
+         console.log('📋 尝试通过API获取队列详细信息...')
+         const queueDetailResponse = await api.get(`/admin/queue/${vehicle.queue_id}/detail`)
+         console.log('队列详细信息API响应:', queueDetailResponse)
+         
+         if (queueDetailResponse && queueDetailResponse.charging_record) {
+           const record = queueDetailResponse.charging_record
+           const orderData = {
+             record_number: record.record_number,
+             queue_number: record.queue_number,
+             license_plate: record.license_plate,
+             charging_mode: record.charging_mode,
+             charging_amount: record.charging_amount,
+             status: record.status,
+             created_at: record.created_at,
+             start_time: record.start_time,
+             end_time: record.end_time,
+             charging_duration: record.charging_duration,
+             electricity_fee: record.electricity_fee,
+             service_fee: record.service_fee,
+             total_fee: record.total_fee,
+             unit_price: record.unit_price,
+             time_period: record.time_period,
+             charging_pile: record.charging_pile_id ? { pile_number: `桩${record.charging_pile_id}` } : null
+           }
+           
+           console.log('✅ 从队列API获取的订单数据:', orderData)
+           return orderData
+         }
+       } catch (error) {
+         console.warn('通过API获取队列详细信息失败:', error)
+       }
+       
+       // 如果API失败，从本地队列数据构造基本信息
+       console.log('📋 回退到本地队列数据构造订单信息...')
+       const queueItem = queueData.value.find(q => q.id === vehicle.queue_id)
+       
+       if (queueItem) {
+         console.log('找到队列信息:', queueItem)
+         
+         // 不生成假的订单编号，直接显示队列基本信息
+         const orderData = {
+           record_number: 'N/A', // 不要生成假的订单编号
+           queue_number: queueItem.queue_number,
+           charging_mode: queueItem.charging_mode,
+           charging_amount: queueItem.requested_amount,
+           status: queueItem.status,
+           created_at: queueItem.queue_time,
+           start_time: queueItem.start_charging_time,
+           estimated_completion_time: queueItem.estimated_completion_time,
+           charging_pile: queueItem.charging_pile_id ? { pile_number: `桩${queueItem.charging_pile_id}` } : null,
+           license_plate: vehicle.license_plate,
+           // 计算预估费用
+           electricity_fee: calculateEstimatedFee(queueItem.requested_amount).electricity_fee,
+           service_fee: calculateEstimatedFee(queueItem.requested_amount).service_fee,
+           total_fee: calculateEstimatedFee(queueItem.requested_amount).total_fee,
+           // 如果正在充电，计算当前充电时长
+           charging_duration: queueItem.status === 'charging' && queueItem.start_charging_time
+             ? (new Date() - new Date(queueItem.start_charging_time)) / (1000 * 60 * 60)
+             : null
+         }
+         
+         console.log('✅ 从队列构造的基本数据:', orderData)
+         return orderData
+       }
+     }
+    
+    // 方法3: 如果都没有，尝试通过车牌号查找
+    if (vehicle.license_plate) {
+      console.log('📋 尝试通过车牌号查找队列信息...')
+      const queueItem = queueData.value.find(q => 
+        q.vehicle && q.vehicle.license_plate === vehicle.license_plate
+      )
+      
+      if (queueItem) {
+        const orderData = {
+          record_number: generateEstimatedOrderNumber(queueItem.charging_mode, queueItem.queue_time),
+          queue_number: queueItem.queue_number,
+          charging_mode: queueItem.charging_mode,
+          charging_amount: queueItem.requested_amount,
+          status: queueItem.status,
+          created_at: queueItem.queue_time,
+          start_time: queueItem.start_charging_time,
+          estimated_completion_time: queueItem.estimated_completion_time,
+          charging_pile: queueItem.charging_pile_id ? { pile_number: `桩${queueItem.charging_pile_id}` } : null,
+          license_plate: vehicle.license_plate,
+          electricity_fee: calculateEstimatedFee(queueItem.requested_amount).electricity_fee,
+          service_fee: calculateEstimatedFee(queueItem.requested_amount).service_fee,
+          total_fee: calculateEstimatedFee(queueItem.requested_amount).total_fee,
+          charging_duration: queueItem.status === 'charging' && queueItem.start_charging_time
+            ? (new Date() - new Date(queueItem.start_charging_time)) / (1000 * 60 * 60)
+            : null
+        }
+        
+        console.log('✅ 通过车牌号构造的订单数据:', orderData)
+        return orderData
+      }
+    }
+    
+    console.log('ℹ️ 该车辆没有找到订单信息')
+    return null
+    
+  } catch (error) {
+    console.error('❌ 获取车辆订单信息失败:', error)
+    return null
+  }
+}
+
+// 不再生成假的订单编号，避免误导用户
+
+// 计算预估费用
+const calculateEstimatedFee = (amount) => {
+  // 使用简单的费用计算逻辑
+  const electricityPrice = 1.0 // 1元/度
+  const servicePrice = 0.5 // 0.5元/度
+  
+  const electricity_fee = amount * electricityPrice
+  const service_fee = amount * servicePrice
+  const total_fee = electricity_fee + service_fee
+  
+  return {
+    electricity_fee: parseFloat(electricity_fee.toFixed(2)),
+    service_fee: parseFloat(service_fee.toFixed(2)),
+    total_fee: parseFloat(total_fee.toFixed(2))
+  }
+}
+
+// 获取订单状态类型
+const getOrderStatusType = (status) => {
+  const typeMap = {
+    'created': 'info',
+    'assigned': 'warning', 
+    'charging': 'success',
+    'completed': 'success',
+    'cancelled': 'danger',
+    'waiting': 'warning',
+    'queuing': 'warning'
+  }
+  return typeMap[status] || 'info'
+}
+
+// 获取订单状态文本
+const getOrderStatusText = (status) => {
+  const textMap = {
+    'created': '已创建',
+    'assigned': '已分配',
+    'charging': '充电中',
+    'completed': '已完成',
+    'cancelled': '已取消',
+    'waiting': '等候中',
+    'queuing': '排队中'
+  }
+  return textMap[status] || status
 }
 
 // 检查是否可以管理车辆
@@ -1543,6 +1924,17 @@ onUnmounted(() => {
     }
   }
   
+  .charging-order-info {
+    margin-top: 20px;
+    
+    h4 {
+      color: #333;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #409EFF;
+      padding-bottom: 8px;
+    }
+  }
+  
   .management-actions {
     margin-top: 20px;
     
@@ -1558,6 +1950,49 @@ onUnmounted(() => {
       }
     }
   }
+}
+
+/* 订单信息特殊样式 */
+.order-number {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #409EFF;
+  background: #f0f9ff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.queue-number {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #E6A23C;
+  background: #fdf6ec;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.charging-duration-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.estimated-duration {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* 描述列表标签样式 */
+:deep(.order-label) {
+  color: #409EFF !important;
+  font-weight: 600;
+}
+
+:deep(.queue-label) {
+  color: #E6A23C !important;
+  font-weight: 600;
 }
 
 .vehicle-item.stay {
@@ -1612,6 +2047,14 @@ onUnmounted(() => {
   color: #303133;
   margin-bottom: 3px;
   font-size: 11px;
+}
+
+.charging-time {
+  font-size: 9px;
+  color: #67C23A;
+  font-weight: bold;
+  margin-bottom: 3px;
+  line-height: 1;
 }
 
 .vehicle-status {

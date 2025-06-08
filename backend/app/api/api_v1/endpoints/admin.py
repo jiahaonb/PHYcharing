@@ -1177,3 +1177,229 @@ async def get_user_charging_orders(
         "limit": limit,
         "offset": offset
     }
+
+@router.get("/vehicles/{vehicle_id}/detail", summary="获取车辆详细信息（管理端）")
+async def get_vehicle_detail_admin(
+    vehicle_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    管理员获取任意车辆的详细信息，包括车主信息、当前队列状态、历史充电记录
+    """
+    try:
+        from sqlalchemy.orm import joinedload
+        from app.models import Vehicle, ChargingQueue, ChargingRecord, QueueStatus
+        
+        # 获取车辆信息（管理员可以查看任意车辆）
+        vehicle = db.query(Vehicle).options(joinedload(Vehicle.owner)).filter(
+            Vehicle.id == vehicle_id
+        ).first()
+        
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="车辆不存在")
+        
+        # 获取当前队列状态
+        current_queue = db.query(ChargingQueue).filter(
+            ChargingQueue.vehicle_id == vehicle_id,
+            ChargingQueue.status.in_([QueueStatus.WAITING, QueueStatus.QUEUING, QueueStatus.CHARGING])
+        ).first()
+        
+        # 获取最后一次充电记录
+        last_charging_record = db.query(ChargingRecord).filter(
+            ChargingRecord.vehicle_id == vehicle_id
+        ).order_by(ChargingRecord.end_time.desc()).first()
+        
+        # 获取历史充电记录（最近5次）
+        charging_history = db.query(ChargingRecord).filter(
+            ChargingRecord.vehicle_id == vehicle_id
+        ).order_by(ChargingRecord.end_time.desc()).limit(5).all()
+        
+        # 确定当前状态
+        current_status = "registered"  # 默认为暂留
+        if current_queue:
+            current_status = current_queue.status.value if hasattr(current_queue.status, 'value') else str(current_queue.status)
+        
+        status_text_map = {
+            "waiting": "等候",
+            "queuing": "等候",
+            "charging": "充电中", 
+            "registered": "暂留"
+        }
+        display_status = status_text_map.get(current_status, "暂留")
+        
+        # 获取充电桩信息
+        charging_pile_info = None
+        if current_queue and current_queue.charging_pile_id:
+            charging_pile = db.query(ChargingPile).filter(
+                ChargingPile.id == current_queue.charging_pile_id
+            ).first()
+            if charging_pile:
+                charging_pile_info = {
+                    "id": charging_pile.id,
+                    "pile_number": charging_pile.pile_number,
+                    "charging_mode": charging_pile.charging_mode.value if hasattr(charging_pile.charging_mode, 'value') else str(charging_pile.charging_mode),
+                    "power": charging_pile.power,
+                    "status": charging_pile.status.value if hasattr(charging_pile.status, 'value') else str(charging_pile.status)
+                }
+        
+        # 构建响应数据
+        result = {
+            "id": vehicle.id,
+            "license_plate": vehicle.license_plate,
+            "battery_capacity": vehicle.battery_capacity or 0.0,
+            "model": vehicle.model or "未知型号",
+            "status": display_status,
+            "status_code": current_status,
+            "owner": {
+                "id": vehicle.owner.id if vehicle.owner else None,
+                "username": vehicle.owner.username if vehicle.owner else "未知",
+                "email": vehicle.owner.email if vehicle.owner else "",
+                "phone": getattr(vehicle.owner, 'phone', None) if vehicle.owner else None
+            },
+            "current_queue": None,
+            "last_charging_time": last_charging_record.end_time if last_charging_record else None,
+            "charging_history": [
+                {
+                    "id": record.id,
+                    "record_number": record.record_number,
+                    "charging_amount": record.charging_amount,
+                    "charging_duration": record.charging_duration,
+                    "start_time": record.start_time,
+                    "end_time": record.end_time,
+                    "total_fee": record.total_fee,
+                    "charging_mode": record.charging_mode,
+                    "electricity_fee": record.electricity_fee,
+                    "service_fee": record.service_fee,
+                    "unit_price": record.unit_price,
+                    "time_period": record.time_period
+                } for record in charging_history
+            ],
+            "created_at": vehicle.created_at
+        }
+        
+        # 添加当前队列信息
+        if current_queue:
+            result["current_queue"] = {
+                "id": current_queue.id,
+                "queue_number": current_queue.queue_number,
+                "charging_mode": current_queue.charging_mode.value if hasattr(current_queue.charging_mode, 'value') else str(current_queue.charging_mode),
+                "requested_amount": current_queue.requested_amount,
+                "queue_time": current_queue.queue_time,
+                "start_charging_time": current_queue.start_charging_time,
+                "estimated_completion_time": current_queue.estimated_completion_time,
+                "charging_pile": charging_pile_info,
+                "status": current_queue.status.value if hasattr(current_queue.status, 'value') else str(current_queue.status)
+            }
+        
+        return {"status": "success", "data": result}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"获取车辆详情失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/queue/{queue_id}/detail", response_model=dict, summary="获取队列详细信息（包括关联的充电记录）")
+async def get_queue_detail(
+    queue_id: int, 
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取队列详细信息（包括关联的充电记录）"""
+    try:
+        # 查找队列记录
+        queue_record = db.query(ChargingQueue).filter(ChargingQueue.id == queue_id).first()
+        if not queue_record:
+            return {"success": False, "error": "Queue not found"}
+        
+        # 查找关联的充电记录
+        charging_record = db.query(ChargingRecord).filter(
+            ChargingRecord.queue_number == queue_record.queue_number
+        ).first()
+        
+        result = {
+            "success": True,
+            "queue": {
+                "id": queue_record.id,
+                "queue_number": queue_record.queue_number,
+                "user_id": queue_record.user_id,
+                "vehicle_id": queue_record.vehicle_id,
+                "charging_mode": queue_record.charging_mode.value if hasattr(queue_record.charging_mode, 'value') else str(queue_record.charging_mode),
+                "requested_amount": queue_record.requested_amount,
+                "status": queue_record.status.value if hasattr(queue_record.status, 'value') else str(queue_record.status),
+                "queue_time": queue_record.queue_time,
+                "estimated_wait_time": queue_record.estimated_wait_time,
+                "charging_pile_id": queue_record.charging_pile_id,
+                "start_charging_time": queue_record.start_charging_time,
+                "estimated_completion_time": queue_record.estimated_completion_time,
+                "created_at": queue_record.created_at
+            }
+        }
+        
+        # 如果有关联的充电记录，添加到返回结果中
+        if charging_record:
+            result["charging_record"] = {
+                "record_number": charging_record.record_number,
+                "queue_number": charging_record.queue_number,
+                "license_plate": charging_record.license_plate,
+                "charging_mode": charging_record.charging_mode,
+                "charging_amount": charging_record.charging_amount,
+                "status": charging_record.status,
+                "created_at": charging_record.created_at,
+                "start_time": charging_record.start_time,
+                "end_time": charging_record.end_time,
+                "charging_duration": charging_record.charging_duration,
+                "electricity_fee": charging_record.electricity_fee,
+                "service_fee": charging_record.service_fee,
+                "total_fee": charging_record.total_fee,
+                "unit_price": charging_record.unit_price,
+                "time_period": charging_record.time_period,
+                "charging_pile_id": charging_record.charging_pile_id
+            }
+        
+        return result
+    except Exception as e:
+        print(f"获取队列详细信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/vehicle/{vehicle_id}/order", response_model=dict, summary="获取车辆订单信息")
+async def get_vehicle_order(
+    vehicle_id: int, 
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取车辆订单信息"""
+    try:
+        # 查找该车辆最新的充电记录
+        charging_record = db.query(ChargingRecord).filter(
+            ChargingRecord.vehicle_id == vehicle_id
+        ).order_by(ChargingRecord.created_at.desc()).first()
+        
+        if charging_record:
+            return {
+                "success": True,
+                "order": {
+                    "record_number": charging_record.record_number,
+                    "queue_number": charging_record.queue_number,
+                    "license_plate": charging_record.license_plate,
+                    "charging_mode": charging_record.charging_mode,
+                    "charging_amount": charging_record.charging_amount,
+                    "status": charging_record.status,
+                    "created_at": charging_record.created_at,
+                    "start_time": charging_record.start_time,
+                    "end_time": charging_record.end_time,
+                    "charging_duration": charging_record.charging_duration,
+                    "electricity_fee": charging_record.electricity_fee,
+                    "service_fee": charging_record.service_fee,
+                    "total_fee": charging_record.total_fee,
+                    "unit_price": charging_record.unit_price,
+                    "time_period": charging_record.time_period,
+                    "charging_pile_id": charging_record.charging_pile_id
+                }
+            }
+        else:
+            return {"success": False, "error": "No order found"}
+    except Exception as e:
+        print(f"获取车辆订单失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

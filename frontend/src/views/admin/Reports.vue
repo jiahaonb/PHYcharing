@@ -719,17 +719,19 @@ const fetchChargingModeChart = async () => {
     let fastCount = 0
     let trickleCount = 0
     
-    try {
+        try {
       const users = await api.get('/admin/users')
       
       for (const user of users) {
         try {
           const userOrders = await api.get(`/admin/users/${user.id}/charging-orders?limit=1000`)
           if (userOrders && userOrders.data) {
+            console.log(`用户 ${user.username} 有 ${userOrders.data.length} 条订单`)
             userOrders.data.forEach(order => {
-              if (order.charging_mode === 'FAST') {
+              console.log(`订单 ${order.record_number} 充电模式: ${order.charging_mode}`)
+              if (order.charging_mode === 'fast') {
                 fastCount++
-              } else if (order.charging_mode === 'TRICKLE') {
+              } else if (order.charging_mode === 'trickle') {
                 trickleCount++
               }
             })
@@ -738,6 +740,7 @@ const fetchChargingModeChart = async () => {
           console.warn(`获取用户 ${user.username} 订单失败:`, error)
         }
       }
+      console.log(`充电模式统计 - 快充: ${fastCount}, 慢充: ${trickleCount}`)
          } catch (error) {
        console.error('获取充电模式数据失败:', error)
        // 如果API调用失败，清空数据

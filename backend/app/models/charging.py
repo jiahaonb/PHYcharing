@@ -78,8 +78,10 @@ class ChargingRecord(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     record_number = Column(String(50), unique=True, index=True, nullable=False)  # 订单编号
+    queue_number = Column(String(20), nullable=False)  # 排队号
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=False)
+    license_plate = Column(String(20), nullable=False)  # 车牌号
     charging_pile_id = Column(Integer, ForeignKey("charging_piles.id"), nullable=True)  # 充电桩编号(分配时补充)
     
     # 充电信息
@@ -89,9 +91,9 @@ class ChargingRecord(Base):
     end_time = Column(DateTime(timezone=True), nullable=True)  # 停止时间
     
     # 费用信息
-    electricity_fee = Column(Float, nullable=True)  # 充电费用
-    service_fee = Column(Float, nullable=True)  # 服务费用
-    total_fee = Column(Float, nullable=True)  # 总费用
+    electricity_fee = Column(Float, nullable=False)  # 充电费用
+    service_fee = Column(Float, nullable=False)  # 服务费用
+    total_fee = Column(Float, nullable=False)  # 总费用
     
     # 其他信息
     unit_price = Column(Float, nullable=True)  # 单位电价
