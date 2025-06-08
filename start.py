@@ -93,7 +93,7 @@ class ChargingSystemLauncher:
             
             if self.backend_process.poll() is None:
                 backend_port = self.config.get('server', {}).get('backend_port', 8000)
-                print(f"✅ 后端服务启动成功 - http://localhost:{backend_port}")
+                print(f"✅ 后端服务启动成功 - http://0.0.0.0:{backend_port}")
                 return True
             else:
                 print("❌ 后端服务启动失败")
@@ -126,7 +126,7 @@ class ChargingSystemLauncher:
             
             if self.frontend_process.poll() is None:
                 frontend_port = self.config.get('server', {}).get('frontend_port', 8088)
-                print(f"✅ 前端服务启动成功 - http://localhost:{frontend_port}")
+                print(f"✅ 前端服务启动成功 - http://0.0.0.0:{frontend_port}")
                 return True
             else:
                 print("❌ 前端服务启动失败")
@@ -184,9 +184,9 @@ class ChargingSystemLauncher:
 🎉 系统启动完成！
 
 🌐 访问地址:
-   前端: http://localhost:{frontend_port}
-   后端: http://localhost:{backend_port}
-   API文档: http://localhost:{backend_port}/docs
+   前端: http://0.0.0.0:{frontend_port}
+   后端: http://0.0.0.0:{backend_port}
+   API文档: http://0.0.0.0:{backend_port}/docs
 
 👤 管理员账户: admin / admin123
 

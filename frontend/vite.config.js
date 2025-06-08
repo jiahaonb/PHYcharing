@@ -12,7 +12,7 @@ let serverConfig = {
   port: 3001,
   proxy: {
     '/api/v1': {
-      target: 'http://localhost:8000',
+      target: 'http://0.0.0.0:8000',
       changeOrigin: true,
     }
   }
