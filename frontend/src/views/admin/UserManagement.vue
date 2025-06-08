@@ -228,30 +228,57 @@
           </el-table>
         </el-card>
 
-        <!-- 最近充电记录 -->
-        <el-card shadow="never" style="margin-top: 20px;" v-if="selectedUser.recent_records && selectedUser.recent_records.length > 0">
+        <!-- 充电详单 -->
+        <el-card shadow="never" style="margin-top: 20px;">
           <template #header>
-            <span>最近充电记录</span>
+            <div class="card-header">
+              <span>用户充电详单</span>
+              <el-button type="primary" size="small" @click="viewUserOrders">
+                查看全部详单
+              </el-button>
+            </div>
           </template>
           <el-table 
-            :data="selectedUser.recent_records" 
+            :data="userOrders" 
+            v-loading="ordersLoading"
             style="width: 100%"
-            empty-text="暂无充电记录"
+            empty-text="暂无充电详单"
           >
-            <el-table-column prop="record_number" label="记录编号" width="150" />
-            <el-table-column prop="charging_amount" label="充电量" width="100">
+            <el-table-column prop="record_number" label="订单编号" width="150" />
+            <el-table-column prop="vehicle" label="车牌号" width="120">
               <template #default="scope">
-                {{ scope.row.charging_amount }}度
+                {{ scope.row.vehicle?.license_plate }}
               </template>
             </el-table-column>
-            <el-table-column prop="total_fee" label="费用" width="100">
+            <el-table-column prop="charging_amount" label="充电量(kWh)" width="100" />
+            <el-table-column prop="total_fee" label="总费用" width="100">
               <template #default="scope">
-                ¥{{ scope.row.total_fee }}
+                <span class="total-fee">
+                  {{ scope.row.total_fee ? `¥${scope.row.total_fee}` : '-' }}
+                </span>
               </template>
             </el-table-column>
-            <el-table-column prop="start_time" label="开始时间" width="180">
+            <el-table-column prop="status" label="状态" width="100">
               <template #default="scope">
-                {{ formatDateTime(scope.row.start_time) }}
+                <el-tag :type="getOrderStatusType(scope.row.status)" size="small">
+                  {{ getOrderStatusText(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="创建时间" width="150">
+              <template #default="scope">
+                {{ formatDateTime(scope.row.created_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100">
+              <template #default="scope">
+                <el-button
+                  type="text"
+                  size="small"
+                  @click="viewOrderDetail(scope.row)"
+                >
+                  详情
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -280,6 +307,10 @@ const statusFilter = ref('')
 const vehicleFilter = ref('')
 const userDetailVisible = ref(false)
 const selectedUser = ref(null)
+
+// 充电详单相关
+const userOrders = ref([])
+const ordersLoading = ref(false)
 
 // 分页
 const currentPage = ref(1)
@@ -355,11 +386,67 @@ const viewUserDetail = async (user) => {
     const userDetail = await fetchUserDetail(user.id)
     selectedUser.value = userDetail
     userDetailVisible.value = true
+    
+    // 同时获取用户的充电详单
+    fetchUserOrders(user.id)
   } catch (error) {
     ElMessage.error('获取用户详情失败')
   } finally {
     loading.value = false
   }
+}
+
+// 获取用户充电详单
+const fetchUserOrders = async (userId) => {
+  ordersLoading.value = true
+  try {
+    const response = await api.get(`/admin/users/${userId}/charging-orders?limit=10`)
+    userOrders.value = response.data || []
+  } catch (error) {
+    console.error('获取用户充电详单失败:', error)
+    userOrders.value = []
+  } finally {
+    ordersLoading.value = false
+  }
+}
+
+// 查看用户全部详单
+const viewUserOrders = () => {
+  if (selectedUser.value) {
+    // 跳转到详单管理页面，并传递用户ID作为过滤条件
+    const route = `/admin/charging-orders?username=${selectedUser.value.username}`
+    window.open(route, '_blank')
+  }
+}
+
+// 查看订单详情
+const viewOrderDetail = (order) => {
+  // 这里可以打开一个订单详情弹窗或跳转到详情页
+  console.log('查看订单详情:', order)
+}
+
+// 获取订单状态类型
+const getOrderStatusType = (status) => {
+  const typeMap = {
+    'created': '',
+    'assigned': 'warning',
+    'charging': 'primary',
+    'completed': 'success',
+    'cancelled': 'danger'
+  }
+  return typeMap[status] || ''
+}
+
+// 获取订单状态文本
+const getOrderStatusText = (status) => {
+  const textMap = {
+    'created': '已创建',
+    'assigned': '已分配',
+    'charging': '充电中',
+    'completed': '已完成',
+    'cancelled': '已取消'
+  }
+  return textMap[status] || status
 }
 
 const toggleUserStatus = async (user) => {
@@ -447,5 +534,10 @@ onMounted(() => {
 
 .item {
   margin-right: 4px;
+}
+
+.total-fee {
+  color: #e6a23c;
+  font-weight: bold;
 }
 </style> 

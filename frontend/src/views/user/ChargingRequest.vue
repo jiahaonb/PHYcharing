@@ -37,7 +37,7 @@
             </el-form-item>
             
             <el-form-item label="充电模式" prop="charging_mode">
-              <el-radio-group v-model="requestForm.charging_mode">
+              <el-radio-group v-model="requestForm.charging_mode" @change="calculateEstimates">
                 <el-radio label="fast">快充 ({{ chargingPowerConfig.fast_charging_power }}度/小时)</el-radio>
                 <el-radio label="trickle">慢充 ({{ chargingPowerConfig.trickle_charging_power }}度/小时)</el-radio>
               </el-radio-group>
@@ -50,6 +50,7 @@
                 :max="selectedVehicle?.battery_capacity || 100"
                 :step="1"
                 style="width: 100%"
+                @change="calculateEstimates"
               />
               <div class="amount-info">
                 <span>单位: 度 (kWh)</span>
@@ -58,6 +59,40 @@
                 </span>
               </div>
             </el-form-item>
+            
+            <!-- 预计费用和时间显示 -->
+            <div v-if="estimatedCost || estimatedTime" class="estimation-display">
+              <h4>预估信息</h4>
+              <el-row :gutter="20">
+                <el-col :span="12" v-if="estimatedTime">
+                  <div class="estimate-item">
+                    <span class="estimate-label">预计充电时间:</span>
+                    <span class="estimate-value time">{{ estimatedTime }}</span>
+                  </div>
+                </el-col>
+                <el-col :span="12" v-if="estimatedCost">
+                  <div class="estimate-item">
+                    <span class="estimate-label">预计总费用:</span>
+                    <span class="estimate-value cost">¥{{ estimatedCost }}</span>
+                  </div>
+                </el-col>
+              </el-row>
+              <div class="cost-breakdown" v-if="costBreakdown">
+                <div class="breakdown-row">
+                  <span>电费 ({{ getCurrentTimePeriod() }}):</span>
+                  <span>¥{{ costBreakdown.electricityCost }}</span>
+                </div>
+                <div class="breakdown-row">
+                  <span>服务费:</span>
+                  <span>¥{{ costBreakdown.serviceCost }}</span>
+                </div>
+                <div class="breakdown-note">
+                  <el-text size="small" type="info">
+                    *费用按当前时段电价计算，实际费用以充电完成时电价为准
+                  </el-text>
+                </div>
+              </div>
+            </div>
             
             <el-form-item>
               <el-button
@@ -165,12 +200,38 @@ const chargingPowerConfig = ref({
   trickle_charging_power: 10.0
 })
 
+// 计费配置
+const billingConfig = ref({
+  peak_time_price: 1.0,
+  normal_time_price: 0.7,
+  valley_time_price: 0.4,
+  service_fee_price: 0.8,
+  time_periods: {
+    peak_times: [[10, 15], [18, 21]],
+    normal_times: [[7, 10], [15, 18], [21, 23]],
+    valley_times: [[23, 7]]
+  }
+})
+
+// 预计费用和时间
+const estimatedCost = ref('')
+const estimatedTime = ref('')
+const costBreakdown = ref(null)
+
 const fetchChargingConfig = async () => {
   try {
     // 使用用户端API获取充电桩配置
     const config = await api.get('/users/charging/config')
     chargingPowerConfig.value.fast_charging_power = config.fast_charging_power
     chargingPowerConfig.value.trickle_charging_power = config.trickle_charging_power
+    
+    // 同时获取计费配置
+    if (config.billing) {
+      billingConfig.value = {
+        ...billingConfig.value,
+        ...config.billing
+      }
+    }
   } catch (error) {
     console.error('获取充电配置失败:', error)
     // 使用默认值，不阻塞功能
@@ -185,6 +246,82 @@ const onVehicleChange = () => {
   if (selectedVehicle.value) {
     // 重置充电量为合理值
     requestForm.requested_amount = Math.min(10, selectedVehicle.value.battery_capacity)
+    // 计算预估值
+    setTimeout(calculateEstimates, 100)
+  }
+}
+
+// 获取当前时段
+const getCurrentTimePeriod = () => {
+  const hour = new Date().getHours()
+  const periods = billingConfig.value.time_periods
+  
+  // 检查峰时
+  for (const [start, end] of periods.peak_times || []) {
+    if (hour >= start && hour < end) return '峰时'
+  }
+  
+  // 检查谷时（需要处理跨日情况）
+  for (const [start, end] of periods.valley_times || []) {
+    if (start > end) { // 跨日情况，如23:00-7:00
+      if (hour >= start || hour < end) return '谷时'
+    } else {
+      if (hour >= start && hour < end) return '谷时'
+    }
+  }
+  
+  // 默认为平时
+  return '平时'
+}
+
+// 获取当前电价
+const getCurrentElectricityPrice = () => {
+  const period = getCurrentTimePeriod()
+  switch (period) {
+    case '峰时': return billingConfig.value.peak_time_price
+    case '谷时': return billingConfig.value.valley_time_price
+    default: return billingConfig.value.normal_time_price
+  }
+}
+
+// 计算预计费用和时间
+const calculateEstimates = () => {
+  if (!requestForm.requested_amount || !requestForm.charging_mode || !selectedVehicle.value) {
+    estimatedCost.value = ''
+    estimatedTime.value = ''
+    costBreakdown.value = null
+    return
+  }
+  
+  // 计算充电时间：充电量/充电效率 = 时间
+  // 例如：50kWh / 50kW = 1h = 60分钟
+  const power = requestForm.charging_mode === 'fast' 
+    ? chargingPowerConfig.value.fast_charging_power 
+    : chargingPowerConfig.value.trickle_charging_power
+  
+  const timeHours = requestForm.requested_amount / power
+  const totalMinutes = Math.round(timeHours * 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  
+  if (hours > 0) {
+    estimatedTime.value = minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
+  } else {
+    estimatedTime.value = `${minutes}分钟`
+  }
+  
+  // 计算费用
+  const electricityPrice = getCurrentElectricityPrice()
+  const serviceFeePrice = billingConfig.value.service_fee_price
+  
+  const electricityCost = (requestForm.requested_amount * electricityPrice).toFixed(2)
+  const serviceCost = (requestForm.requested_amount * serviceFeePrice).toFixed(2)
+  const totalCost = (parseFloat(electricityCost) + parseFloat(serviceCost)).toFixed(2)
+  
+  estimatedCost.value = totalCost
+  costBreakdown.value = {
+    electricityCost,
+    serviceCost
   }
 }
 
@@ -324,5 +461,66 @@ onMounted(() => {
   border-bottom: none;
   font-weight: bold;
   color: #e6a23c;
+}
+
+/* 预估显示样式 */
+.estimation-display {
+  background: #f0f9ff;
+  border: 1px solid #409eff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.estimation-display h4 {
+  margin: 0 0 12px 0;
+  color: #409eff;
+  font-size: 16px;
+}
+
+.estimate-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.estimate-label {
+  color: #606266;
+  font-weight: 500;
+}
+
+.estimate-value {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.estimate-value.cost {
+  color: #e6a23c;
+  font-size: 18px;
+}
+
+.estimate-value.time {
+  color: #67c23a;
+  font-size: 16px;
+}
+
+.cost-breakdown {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #d9ecff;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.breakdown-note {
+  margin-top: 8px;
+  text-align: center;
 }
 </style> 

@@ -73,31 +73,36 @@ class ChargingQueue(Base):
     pile = relationship("ChargingPile")
 
 class ChargingRecord(Base):
-    """充电记录模型"""
+    """充电详单模型"""
     __tablename__ = "charging_records"
     
     id = Column(Integer, primary_key=True, index=True)
-    record_number = Column(String(50), unique=True, index=True, nullable=False)  # 详单编号
+    record_number = Column(String(50), unique=True, index=True, nullable=False)  # 订单编号
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=False)
-    charging_pile_id = Column(Integer, ForeignKey("charging_piles.id"), nullable=False)
+    charging_pile_id = Column(Integer, ForeignKey("charging_piles.id"), nullable=True)  # 充电桩编号(分配时补充)
     
     # 充电信息
     charging_amount = Column(Float, nullable=False)  # 充电电量(度)
-    charging_duration = Column(Float, nullable=False)  # 充电时长(小时)
-    start_time = Column(DateTime(timezone=True), nullable=False)  # 启动时间
-    end_time = Column(DateTime(timezone=True), nullable=False)  # 停止时间
+    charging_duration = Column(Float, nullable=True)  # 充电时长(小时) - 充电结束时更新
+    start_time = Column(DateTime(timezone=True), nullable=True)  # 启动时间
+    end_time = Column(DateTime(timezone=True), nullable=True)  # 停止时间
     
     # 费用信息
-    electricity_fee = Column(Float, nullable=False)  # 充电费用
-    service_fee = Column(Float, nullable=False)  # 服务费用
-    total_fee = Column(Float, nullable=False)  # 总费用
+    electricity_fee = Column(Float, nullable=True)  # 充电费用
+    service_fee = Column(Float, nullable=True)  # 服务费用
+    total_fee = Column(Float, nullable=True)  # 总费用
     
     # 其他信息
-    unit_price = Column(Float, nullable=False)  # 单位电价
-    time_period = Column(String(20), nullable=False)  # 时段(峰/平/谷)
+    unit_price = Column(Float, nullable=True)  # 单位电价
+    time_period = Column(String(20), nullable=True)  # 时段(峰/平/谷)
+    charging_mode = Column(Enum(ChargingMode), nullable=False)  # 充电模式
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # 订单状态
+    status = Column(String(20), default="created")  # created, assigned, charging, completed, cancelled
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())  # 订单生成时间
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # 关联关系
     user = relationship("User", back_populates="charging_records")

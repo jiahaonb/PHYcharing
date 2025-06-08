@@ -49,11 +49,11 @@
         <el-card class="stat-card">
           <div class="stat-content">
             <div class="stat-icon">
-              <el-icon size="40" color="#f56c6c"><Clock /></el-icon>
+              <el-icon size="40" color="#f56c6c"><Document /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-number">{{ stats.queueCount }}</div>
-              <div class="stat-label">当前排队数</div>
+              <div class="stat-number">{{ stats.activeOrders }}</div>
+              <div class="stat-label">当前订单数</div>
             </div>
           </div>
         </el-card>
@@ -65,27 +65,28 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>当前排队状态</span>
-              <el-button type="primary" @click="refreshQueue">刷新</el-button>
+              <span>当前用户订单</span>
+              <el-button type="primary" @click="refreshOrders">刷新</el-button>
             </div>
           </template>
           
-          <div v-if="queueList.length === 0" class="empty-state">
-            <el-empty description="暂无排队记录" />
+          <div v-if="currentOrders.length === 0" class="empty-state">
+            <el-empty description="暂无活跃订单" />
           </div>
           
           <div v-else>
-            <div v-for="queue in queueList" :key="queue.id" class="queue-item">
-              <div class="queue-info">
-                <div class="queue-number">{{ queue.queue_number }}</div>
-                <div class="queue-details">
-                  <div>充电模式: {{ queue.charging_mode === 'fast' ? '快充' : '慢充' }}</div>
-                  <div>请求电量: {{ queue.requested_amount }}度</div>
-                  <div>状态: {{ getStatusText(queue.status) }}</div>
+            <div v-for="order in currentOrders" :key="order.id" class="order-item">
+              <div class="order-info">
+                <div class="order-number">{{ order.record_number }}</div>
+                <div class="order-details">
+                  <div>充电量: {{ order.charging_amount }}度</div>
+                  <div>状态: {{ getOrderStatusText(order.status) }}</div>
+                  <div v-if="order.total_fee">费用: ¥{{ order.total_fee.toFixed(2) }}</div>
+                  <div>创建时间: {{ formatDate(order.created_at) }}</div>
                 </div>
               </div>
-              <div class="queue-actions">
-                <el-button size="small" @click="viewQueue(queue.id)">查看详情</el-button>
+              <div class="order-actions">
+                <el-button size="small" @click="viewOrderDetail(order)">查看详情</el-button>
               </div>
             </div>
           </div>
@@ -122,6 +123,60 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 订单详情弹窗 -->
+    <el-dialog 
+      v-model="orderDetailVisible" 
+      :title="`订单详情 - ${selectedOrder?.record_number}`"
+      width="600px"
+      @close="closeOrderDetail"
+    >
+      <div v-if="selectedOrder" class="order-detail">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="订单编号">
+            {{ selectedOrder.record_number }}
+          </el-descriptions-item>
+          <el-descriptions-item label="订单状态">
+            <el-tag :type="getOrderStatusType(selectedOrder.status)">
+              {{ getOrderStatusText(selectedOrder.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="充电量">
+            {{ selectedOrder.charging_amount }}度
+          </el-descriptions-item>
+          <el-descriptions-item label="充电模式">
+            {{ selectedOrder.charging_mode === 'FAST' ? '快充' : '慢充' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="创建时间">
+            {{ formatDate(selectedOrder.created_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="开始时间" v-if="selectedOrder.start_time">
+            {{ formatDate(selectedOrder.start_time) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="结束时间" v-if="selectedOrder.end_time">
+            {{ formatDate(selectedOrder.end_time) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="充电时长" v-if="selectedOrder.charging_duration">
+            {{ selectedOrder.charging_duration.toFixed(2) }}小时
+          </el-descriptions-item>
+          <el-descriptions-item label="电费" v-if="selectedOrder.electricity_fee">
+            ¥{{ selectedOrder.electricity_fee.toFixed(2) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="服务费" v-if="selectedOrder.service_fee">
+            ¥{{ selectedOrder.service_fee.toFixed(2) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="总费用" v-if="selectedOrder.total_fee">
+            <span class="total-fee">¥{{ selectedOrder.total_fee.toFixed(2) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="单价" v-if="selectedOrder.unit_price">
+            {{ selectedOrder.unit_price }}元/度
+          </el-descriptions-item>
+          <el-descriptions-item label="时段" v-if="selectedOrder.time_period">
+            {{ selectedOrder.time_period }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -134,21 +189,34 @@ const stats = reactive({
   totalCharging: 0,
   totalDuration: 0,
   totalFee: 0,
-  queueCount: 0
+  activeOrders: 0
 })
 
-const queueList = ref([])
+const currentOrders = ref([])
 const recentRecords = ref([])
+const orderDetailVisible = ref(false)
+const selectedOrder = ref(null)
 
-const getStatusText = (status) => {
+const getOrderStatusText = (status) => {
   const statusMap = {
-    waiting: '等候区等待',
-    queuing: '充电区排队',
-    charging: '正在充电',
-    completed: '充电完成',
+    created: '已创建',
+    assigned: '已分配',
+    charging: '充电中',
+    completed: '已完成',
     cancelled: '已取消'
   }
   return statusMap[status] || status
+}
+
+const getOrderStatusType = (status) => {
+  const typeMap = {
+    created: 'info',
+    assigned: 'warning',
+    charging: 'success',
+    completed: 'success',
+    cancelled: 'danger'
+  }
+  return typeMap[status] || 'info'
 }
 
 const formatDate = (dateString) => {
@@ -159,40 +227,93 @@ const fetchStats = async () => {
   try {
     // 获取充电记录统计
     const records = await api.get('/charging/records')
-    stats.totalCharging = records.length
-    stats.totalDuration = records.reduce((sum, record) => sum + record.charging_duration, 0)
-    stats.totalFee = records.reduce((sum, record) => sum + record.total_fee, 0)
     
-    // 获取最近记录
-    recentRecords.value = records.slice(0, 5)
+    if (records && Array.isArray(records)) {
+      stats.totalCharging = records.length
+      stats.totalDuration = records.reduce((sum, record) => {
+        const duration = record.charging_duration || 0
+        return sum + duration
+      }, 0)
+      stats.totalFee = records.reduce((sum, record) => {
+        const fee = record.total_fee || 0
+        return sum + fee
+      }, 0)
+      
+      // 统计活跃订单数（未完成的订单）
+      const activeOrdersCount = records.filter(record => 
+        record.status && !['completed', 'cancelled'].includes(record.status)
+      ).length
+      stats.activeOrders = activeOrdersCount
+      
+      // 获取最近记录（只显示已完成的记录）
+      const completedRecords = records.filter(record => 
+        record.status === 'completed' && 
+        record.start_time && 
+        record.total_fee
+      )
+      recentRecords.value = completedRecords.slice(0, 5)
+    } else {
+      // 如果没有记录或记录格式不正确，设置默认值
+      stats.totalCharging = 0
+      stats.totalDuration = 0
+      stats.totalFee = 0
+      stats.activeOrders = 0
+      recentRecords.value = []
+    }
   } catch (error) {
     console.error('获取统计数据失败:', error)
+    // 设置默认值
+    stats.totalCharging = 0
+    stats.totalDuration = 0
+    stats.totalFee = 0
+    stats.activeOrders = 0
+    recentRecords.value = []
   }
 }
 
-const fetchQueue = async () => {
+const fetchCurrentOrders = async () => {
   try {
-    const queue = await api.get('/charging/queue')
-    queueList.value = queue
-    stats.queueCount = queue.length
+    // 获取当前用户的所有订单
+    const records = await api.get('/charging/records')
+    
+    if (records && Array.isArray(records)) {
+      // 过滤出活跃的订单（未完成的订单）
+      const activeOrders = records.filter(record => 
+        record.status && !['completed', 'cancelled'].includes(record.status)
+      )
+      
+      // 按创建时间倒序排列
+      currentOrders.value = activeOrders.sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      ).slice(0, 10) // 只显示最近10个活跃订单
+    } else {
+      currentOrders.value = []
+    }
   } catch (error) {
-    console.error('获取排队状态失败:', error)
+    console.error('获取当前订单失败:', error)
+    currentOrders.value = []
   }
 }
 
-const refreshQueue = () => {
-  fetchQueue()
-  ElMessage.success('排队状态已刷新')
+const refreshOrders = () => {
+  fetchCurrentOrders()
+  fetchStats() // 同时刷新统计数据
+  ElMessage.success('订单状态已刷新')
 }
 
-const viewQueue = (queueId) => {
-  // 跳转到排队详情
-  console.log('查看排队详情:', queueId)
+const viewOrderDetail = (order) => {
+  selectedOrder.value = order
+  orderDetailVisible.value = true
+}
+
+const closeOrderDetail = () => {
+  orderDetailVisible.value = false
+  selectedOrder.value = null
 }
 
 onMounted(() => {
   fetchStats()
-  fetchQueue()
+  fetchCurrentOrders()
 })
 </script>
 
@@ -250,7 +371,7 @@ onMounted(() => {
   padding: 40px 0;
 }
 
-.queue-item, .record-item {
+.order-item, .record-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -258,22 +379,32 @@ onMounted(() => {
   border-bottom: 1px solid #f0f0f0;
 }
 
-.queue-item:last-child, .record-item:last-child {
+.order-item:last-child, .record-item:last-child {
   border-bottom: none;
 }
 
-.queue-number, .record-number {
+.order-number, .record-number {
   font-weight: bold;
   color: #409eff;
   margin-bottom: 5px;
 }
 
-.queue-details, .record-details {
+.order-details, .record-details {
   font-size: 14px;
   color: #666;
 }
 
-.queue-details div, .record-details div {
+.order-details div, .record-details div {
   margin-bottom: 2px;
+}
+
+.order-detail {
+  padding: 10px 0;
+}
+
+.total-fee {
+  font-weight: bold;
+  color: #e6a23c;
+  font-size: 16px;
 }
 </style> 

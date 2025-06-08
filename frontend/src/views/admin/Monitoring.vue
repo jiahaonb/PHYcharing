@@ -75,13 +75,45 @@
             <div class="queue-status">
               <div class="queue-item" v-for="queue in queueData" :key="queue.pileId">
                 <div class="queue-header">
-                  <span>{{ queue.pileName }}</span>
-                  <el-tag size="small">{{ queue.queueLength }}人排队</el-tag>
+                  <el-tooltip effect="dark" placement="top-start" :disabled="queue.queueDetails.length === 0">
+                    <template #content>
+                      <div v-if="queue.queueDetails.length > 0">
+                        <div style="font-weight: bold; margin-bottom: 5px;">排队详情:</div>
+                        <div v-for="detail in queue.queueDetails.slice(0, 5)" :key="detail.queue_id" style="margin-bottom: 3px;">
+                          第{{ detail.position }}位: {{ detail.username }} ({{ detail.vehicle_info }})
+                        </div>
+                        <div v-if="queue.queueDetails.length > 5" style="color: #909399;">
+                          还有{{ queue.queueDetails.length - 5 }}人...
+                        </div>
+                      </div>
+                    </template>
+                    <span style="cursor: pointer;">{{ queue.pileName }}</span>
+                  </el-tooltip>
+                  <div class="queue-tags">
+                    <el-tag size="small" :type="getQueueStatusType(queue.queueLength)">
+                      {{ queue.queueLength }}人排队
+                    </el-tag>
+                    <el-tag size="small" :type="getStatusType(queue.pileStatus)" style="margin-left: 5px;">
+                      {{ getStatusText(queue.pileStatus) }}
+                    </el-tag>
+                  </div>
                 </div>
                 <el-progress 
-                  :percentage="(queue.queueLength / 5) * 100" 
-                  :status="queue.queueLength > 3 ? 'exception' : 'success'"
+                  :percentage="Math.min((queue.queueLength / 5) * 100, 100)" 
+                  :status="queue.queueLength > 3 ? 'exception' : queue.queueLength > 1 ? 'warning' : 'success'"
                 />
+                <div class="queue-info">
+                  <small style="color: #909399;">
+                    <!-- {{ queue.chargingMode === 'fast' ? '快充模式 - 专桩排队' : '慢充模式 - 专桩排队' }} -->
+                      当前车辆: {{ queue.vehicle_info }}
+                    <span v-if="queue.currentUser" style="margin-left: 10px;">
+                      当前用户: {{ queue.currentUser }}
+                    </span>
+                    <span v-if="queue.queueLength > 0" style="margin-left: 10px;">
+                      预计等待: {{ Math.round(queue.estimatedWaitTime) }}分钟
+                    </span>
+                  </small>
+                </div>
               </div>
             </div>
           </el-card>
@@ -179,6 +211,13 @@ const getAlertType = (level) => {
   return typeMap[level] || 'info'
 }
 
+const getQueueStatusType = (queueLength) => {
+  if (queueLength === 0) return 'info'
+  if (queueLength <= 1) return 'success'
+  if (queueLength <= 3) return 'warning'
+  return 'danger'
+}
+
 // API调用函数
 const fetchMonitoringData = async () => {
   loading.value = true
@@ -244,53 +283,93 @@ const fetchPileStatus = async () => {
 
 const fetchQueueData = async () => {
   try {
-    const piles = await api.get('/admin/piles')
+    // 使用正确的API端点获取各充电桩的队列状态
+    const pileQueues = await api.get('/admin/queue/piles')
     
-    queueData.value = await Promise.all(piles.map(async (pile) => {
-      try {
-        const queueInfo = await api.get(`/admin/piles/${pile.id}/queue`)
-        return {
-          pileId: pile.pile_number,
-          pileName: `${pile.charging_mode === 'fast' ? '快充桩' : '慢充桩'}-${pile.pile_number}`,
-          queueLength: queueInfo.length
-        }
-      } catch (error) {
-        return {
-          pileId: pile.pile_number,
-          pileName: `${pile.charging_mode === 'fast' ? '快充桩' : '慢充桩'}-${pile.pile_number}`,
-          queueLength: 0
-        }
+    queueData.value = pileQueues.map((pileQueue) => {
+      return {
+        pileId: pileQueue.pile_name.split('-')[1] || pileQueue.pile_id, // 提取桩编号
+        pileName: pileQueue.pile_name,
+        queueLength: pileQueue.queue_length,
+        chargingMode: pileQueue.pile_name.includes('快充') ? 'fast' : 'trickle',
+        pileStatus: pileQueue.pile_status,
+        currentUser: pileQueue.current_user,
+        estimatedWaitTime: pileQueue.estimated_wait_time,
+        queueDetails: pileQueue.queue_details || []
       }
-    }))
+    })
+    
+    // console.log('排队数据已更新:', queueData.value)
   } catch (error) {
     console.error('获取队列数据失败:', error)
+    // 如果获取失败，尝试备用方案
+    try {
+      const piles = await api.get('/admin/piles')
+      queueData.value = piles.map((pile) => ({
+        pileId: pile.pile_number,
+        pileName: `${pile.charging_mode === 'fast' ? '快充桩' : '慢充桩'}-${pile.pile_number}`,
+        queueLength: 0,
+        chargingMode: pile.charging_mode,
+        pileStatus: pile.status,
+        currentUser: null,
+        estimatedWaitTime: 0,
+        queueDetails: []
+      }))
+      console.log('使用备用数据:', queueData.value)
+    } catch (fallbackError) {
+      console.error('备用数据获取也失败:', fallbackError)
+      queueData.value = []
+    }
   }
 }
 
 const fetchAlerts = async () => {
-  // 暂时使用模拟数据，后续可以实现真实的警报系统
   const currentTime = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   const faultPiles = pileStatus.value.filter(p => p.status === 'fault')
   const busyQueues = queueData.value.filter(q => q.queueLength > 3)
+  const offlinePiles = pileStatus.value.filter(p => p.status === 'offline')
   
   alerts.value = [
+    // 故障警报
     ...faultPiles.map(pile => ({
       time: currentTime,
       type: '故障警报',
       level: 'error',
       pile: pile.id,
-      message: `充电桩 ${pile.id} 发生故障，已停止服务`,
+      message: `充电桩 ${pile.id} 发生故障，需要维修`,
       status: 'pending'
     })),
+    // 离线警报
+    ...offlinePiles.map(pile => ({
+      time: currentTime,
+      type: '离线警报',
+      level: 'error',
+      pile: pile.id,
+      message: `充电桩 ${pile.id} 已离线，请检查网络连接`,
+      status: 'pending'
+    })),
+    // 排队警报（基于真实排队数据）
     ...busyQueues.map(queue => ({
       time: currentTime,
       type: '排队警报',
       level: 'warning',
       pile: queue.pileId,
-      message: `充电桩 ${queue.pileId} 排队人数较多 (${queue.queueLength}人)`,
+      message: `${queue.pileName} 排队人数较多 (${queue.queueLength}人)，建议引导用户到其他充电桩`,
       status: 'pending'
     }))
   ]
+  
+  // 如果没有警报，显示系统正常
+  if (alerts.value.length === 0) {
+    alerts.value = [{
+      time: currentTime,
+      type: '系统状态',
+      level: 'info',
+      pile: '-',
+      message: '所有充电桩运行正常，无排队警报',
+      status: 'resolved'
+    }]
+  }
 }
 
 // 生成实时功率数据
@@ -435,7 +514,9 @@ onMounted(() => {
     
     // 设置定时刷新（每10秒）
     refreshTimer = setInterval(() => {
-      fetchPileStatus() // 只刷新充电桩状态以保持实时性
+      fetchPileStatus() // 刷新充电桩状态
+      fetchQueueData()  // 刷新排队数据
+      fetchAlerts()     // 刷新警报信息
     }, 10000)
   })
 })
@@ -536,5 +617,15 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.queue-tags {
+  display: flex;
+  align-items: center;
+}
+
+.queue-info {
+  margin-top: 5px;
+  text-align: center;
 }
 </style> 

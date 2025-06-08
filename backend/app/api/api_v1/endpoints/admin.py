@@ -875,7 +875,7 @@ async def get_all_users(
     result = []
     for user in users:
         # 获取用户的车辆数量
-        vehicle_count = db.query(Vehicle).filter(Vehicle.user_id == user.id).count()
+        vehicle_count = db.query(Vehicle).filter(Vehicle.owner_id == user.id).count()
         
         result.append({
             "id": user.id,
@@ -904,7 +904,7 @@ async def get_user_detail(
         raise HTTPException(status_code=404, detail="用户不存在")
     
     # 获取用户的车辆
-    vehicles = db.query(Vehicle).filter(Vehicle.user_id == user_id).all()
+    vehicles = db.query(Vehicle).filter(Vehicle.owner_id == user_id).all()
     
     # 获取用户的充电记录统计
     charging_records = db.query(ChargingRecord).filter(ChargingRecord.user_id == user_id).all()
@@ -1110,3 +1110,70 @@ async def get_active_queues(
         })
     
     return result
+
+@router.get("/users/{user_id}/charging-orders", summary="获取用户充电详单")
+async def get_user_charging_orders(
+    user_id: int,
+    limit: int = 10,
+    offset: int = 0,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取指定用户的充电详单记录
+    """
+    # 验证用户是否存在
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 获取充电记录，按创建时间倒序排列
+    charging_records = db.query(ChargingRecord)\
+        .filter(ChargingRecord.user_id == user_id)\
+        .order_by(ChargingRecord.created_at.desc())\
+        .offset(offset)\
+        .limit(limit)\
+        .all()
+    
+    # 格式化返回数据
+    result = []
+    for record in charging_records:
+        # 获取关联的车辆和充电桩信息
+        vehicle = db.query(Vehicle).filter(Vehicle.id == record.vehicle_id).first()
+        charging_pile = db.query(ChargingPile).filter(ChargingPile.id == record.charging_pile_id).first()
+        
+        result.append({
+            "id": record.id,
+            "record_number": record.record_number,
+            "status": record.status if hasattr(record, 'status') else 'completed',
+            "charging_amount": record.charging_amount,
+            "charging_duration": record.charging_duration,
+            "charging_mode": record.charging_mode,
+            "start_time": record.start_time,
+            "end_time": record.end_time,
+            "electricity_fee": record.electricity_fee,
+            "service_fee": record.service_fee,
+            "total_fee": record.total_fee,
+            "unit_price": record.unit_price,
+            "time_period": record.time_period,
+            "created_at": record.created_at,
+            "vehicle": {
+                "id": vehicle.id if vehicle else None,
+                "license_plate": vehicle.license_plate if vehicle else "未知车辆",
+                "model": getattr(vehicle, 'model', None) if vehicle else None
+            } if vehicle else None,
+            "charging_pile": {
+                "id": charging_pile.id if charging_pile else None,
+                "pile_number": charging_pile.pile_number if charging_pile else "未知充电桩"
+            } if charging_pile else None
+        })
+    
+    # 获取总记录数
+    total_count = db.query(ChargingRecord).filter(ChargingRecord.user_id == user_id).count()
+    
+    return {
+        "data": result,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset
+    }

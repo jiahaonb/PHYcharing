@@ -86,137 +86,137 @@
       @close="closeDetailDialog"
     >
       <div v-if="vehicleDetail" class="vehicle-detail">
-        <!-- 基本信息 -->
-        <div class="detail-section">
-          <h3>基本信息</h3>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>车牌号:</label>
-                <span>{{ vehicleDetail.license_plate }}</span>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>当前状态:</label>
-                <el-tag :type="getStatusType(vehicleDetail.status_code)">
-                  {{ vehicleDetail.status }}
-                </el-tag>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>车型:</label>
-                <span>{{ vehicleDetail.model }}</span>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>电池容量:</label>
-                <span>{{ vehicleDetail.battery_capacity }}kWh</span>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>车主:</label>
-                <span>{{ vehicleDetail.owner?.username }}</span>
-              </div>
-            </el-col>
-            <el-col :span="12" v-if="vehicleDetail.last_charging_time">
-              <div class="detail-item">
-                <label>上次充电:</label>
-                <span>{{ formatTime(vehicleDetail.last_charging_time) }}</span>
-              </div>
-            </el-col>
-          </el-row>
-        </div>
-
-        <!-- 当前队列信息 -->
-        <div v-if="vehicleDetail.current_queue" class="detail-section">
-          <h3>当前充电信息</h3>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>排队号:</label>
-                <span>{{ vehicleDetail.current_queue.queue_number }}</span>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>充电模式:</label>
-                <span>{{ vehicleDetail.current_queue.charging_mode === 'fast' ? '快充' : '慢充' }}</span>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>需求电量:</label>
-                <span>{{ vehicleDetail.current_queue.requested_amount }}kWh</span>
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <div class="detail-item">
-                <label>请求时间:</label>
-                <span>{{ formatTime(vehicleDetail.current_queue.queue_time) }}</span>
-              </div>
-            </el-col>
-            <el-col :span="24" v-if="vehicleDetail.current_queue.estimated_completion_time">
-              <div class="detail-item">
-                <label>预计完成:</label>
-                <span>{{ formatTime(vehicleDetail.current_queue.estimated_completion_time) }}</span>
-              </div>
-            </el-col>
-          </el-row>
-        </div>
-
-        <!-- 充电历史 -->
-        <div v-if="vehicleDetail.charging_history && vehicleDetail.charging_history.length > 0" class="detail-section">
-          <h3>最近充电记录</h3>
-          <el-table :data="vehicleDetail.charging_history" size="small">
-            <el-table-column prop="record_number" label="记录号" width="120"/>
-            <el-table-column prop="charging_amount" label="充电量(kWh)" width="100"/>
-            <el-table-column prop="charging_duration" label="时长(h)" width="80"/>
-            <el-table-column prop="total_fee" label="费用(元)" width="80"/>
-            <el-table-column prop="end_time" label="结束时间" width="150">
-              <template #default="scope">
-                {{ formatTime(scope.row.end_time) }}
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-
-        <!-- 充电请求表单 -->
-        <div v-if="vehicleDetail.status_code === 'registered'" class="detail-section">
-          <h3>发起充电请求</h3>
-          <el-form 
-            ref="chargingFormRef"
-            :model="chargingForm" 
-            :rules="chargingRules"
-            label-width="100px"
-          >
+        <!-- 基本信息 - 可折叠 -->
+        <el-collapse v-model="activePanels" class="detail-collapse">
+          <el-collapse-item title="基本信息" name="basic">
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="充电模式" prop="charging_mode">
-                  <el-radio-group v-model="chargingForm.charging_mode">
-                    <el-radio label="fast">快充 ({{ chargingConfig.fast_charging_power || 60 }}kW)</el-radio>
-                    <el-radio label="trickle">慢充 ({{ chargingConfig.trickle_charging_power || 7 }}kW)</el-radio>
-                  </el-radio-group>
-                </el-form-item>
+                <div class="detail-item">
+                  <label>车牌号:</label>
+                  <span>{{ vehicleDetail.license_plate }}</span>
+                </div>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="充电量" prop="requested_amount">
-                  <el-input-number
-                    v-model="chargingForm.requested_amount"
-                    :min="1"
-                    :max="vehicleDetail.battery_capacity"
-                    :step="1"
-                    style="width: 100%"
-                  />
-                  <div class="form-hint">最大: {{ vehicleDetail.battery_capacity }}kWh</div>
-                </el-form-item>
+                <div class="detail-item">
+                  <label>当前状态:</label>
+                  <el-tag :type="getStatusType(vehicleDetail.status_code)">
+                    {{ vehicleDetail.status }}
+                  </el-tag>
+                </div>
+              </el-col>
+              <el-col :span="12">
+                <div class="detail-item">
+                  <label>车型:</label>
+                  <span>{{ vehicleDetail.model }}</span>
+                </div>
+              </el-col>
+              <el-col :span="12">
+                <div class="detail-item">
+                  <label>电池容量:</label>
+                  <span>{{ vehicleDetail.battery_capacity }}kWh</span>
+                </div>
+              </el-col>
+              <el-col :span="12">
+                <div class="detail-item">
+                  <label>车主:</label>
+                  <span>{{ vehicleDetail.owner?.username }}</span>
+                </div>
+              </el-col>
+              <el-col :span="12" v-if="vehicleDetail.last_charging_time">
+                <div class="detail-item">
+                  <label>上次充电:</label>
+                  <span>{{ formatTime(vehicleDetail.last_charging_time) }}</span>
+                </div>
               </el-col>
             </el-row>
-          </el-form>
-        </div>
+          </el-collapse-item>
+
+          <!-- 最近充电记录 - 可折叠 -->
+          <el-collapse-item 
+            title="最近充电记录" 
+            name="history"
+            v-if="vehicleDetail.charging_history && vehicleDetail.charging_history.length > 0"
+          >
+            <el-table :data="vehicleDetail.charging_history" size="small">
+              <el-table-column prop="record_number" label="记录号" width="120"/>
+              <el-table-column prop="charging_amount" label="充电量(kWh)" width="100"/>
+              <el-table-column prop="charging_duration" label="时长(h)" width="80"/>
+              <el-table-column prop="total_fee" label="费用(元)" width="80"/>
+              <el-table-column prop="end_time" label="结束时间" width="150">
+                <template #default="scope">
+                  {{ formatTime(scope.row.end_time) }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-collapse-item>
+
+          <!-- 发起充电请求 - 可折叠 -->
+          <el-collapse-item 
+            title="发起充电请求" 
+            name="request"
+            v-if="vehicleDetail.status_code === 'registered'"
+          >
+            <el-form 
+              ref="chargingFormRef"
+              :model="chargingForm" 
+              :rules="chargingRules"
+              label-width="100px"
+            >
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="充电模式" prop="charging_mode">
+                    <el-radio-group v-model="chargingForm.charging_mode" @change="calculateEstimates">
+                      <el-radio label="fast">快充 ({{ chargingConfig.fast_charging_power || 60 }}kW)</el-radio>
+                      <el-radio label="trickle">慢充 ({{ chargingConfig.trickle_charging_power || 7 }}kW)</el-radio>
+                    </el-radio-group>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="充电量" prop="requested_amount">
+                    <el-input-number
+                      v-model="chargingForm.requested_amount"
+                      :min="1"
+                      :max="vehicleDetail.battery_capacity"
+                      :step="1"
+                      style="width: 100%"
+                      @change="calculateEstimates"
+                    />
+                    <div class="form-hint">最大: {{ vehicleDetail.battery_capacity }}kWh</div>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              
+              <!-- 预计费用和时间显示 -->
+              <div v-if="estimatedCost || estimatedTime" class="estimation-display">
+                <el-row :gutter="20">
+                  <el-col :span="12" v-if="estimatedTime">
+                    <div class="estimate-item">
+                      <label>预计充电时间:</label>
+                      <span class="estimate-value">{{ estimatedTime }}</span>
+                    </div>
+                  </el-col>
+                  <el-col :span="12" v-if="estimatedCost">
+                    <div class="estimate-item">
+                      <label>预计总费用:</label>
+                      <span class="estimate-value cost">¥{{ estimatedCost }}</span>
+                    </div>
+                  </el-col>
+                </el-row>
+                <div class="cost-breakdown" v-if="costBreakdown">
+                  <div class="breakdown-item">
+                    <span>电费: ¥{{ costBreakdown.electricityCost }}</span>
+                    <span>服务费: ¥{{ costBreakdown.serviceCost }}</span>
+                  </div>
+                  <div class="breakdown-note">
+                    <el-text size="small" type="info">
+                      *费用按当前{{ getCurrentTimePeriod() }}电价计算，实际费用以充电完成时的电价为准
+                    </el-text>
+                  </div>
+                </div>
+              </div>
+            </el-form>
+          </el-collapse-item>
+        </el-collapse>
 
         <!-- 操作按钮 -->
         <div class="detail-actions">
@@ -278,10 +278,26 @@ const selectedVehicle = ref(null)
 const vehicleDetail = ref(null)
 const chargingFormRef = ref()
 
+// 折叠面板激活状态
+const activePanels = ref(['basic', 'history', 'request'])
+
 // 充电配置
 const chargingConfig = ref({
   fast_charging_power: 60,
   trickle_charging_power: 7
+})
+
+// 计费配置
+const billingConfig = ref({
+  peak_time_price: 1.0,
+  normal_time_price: 0.7,
+  valley_time_price: 0.4,
+  service_fee_price: 0.8,
+  time_periods: {
+    peak_times: [[10, 15], [18, 21]],
+    normal_times: [[7, 10], [15, 18], [21, 23]],
+    valley_times: [[23, 7]]
+  }
 })
 
 // 充电请求表单
@@ -289,6 +305,11 @@ const chargingForm = reactive({
   charging_mode: 'fast',
   requested_amount: 10
 })
+
+// 预计费用和时间
+const estimatedCost = ref('')
+const estimatedTime = ref('')
+const costBreakdown = ref(null)
 
 // 充电请求表单验证规则
 const chargingRules = {
@@ -331,6 +352,8 @@ const showVehicleDetail = async (vehicle) => {
       // 如果是暂留状态，初始化充电表单
       if (response.data.status_code === 'registered') {
         chargingForm.requested_amount = Math.min(10, response.data.battery_capacity)
+        // 计算初始预估值
+        setTimeout(calculateEstimates, 100)
       }
       
       showDetailDialog.value = true
@@ -516,10 +539,91 @@ const fetchChargingConfig = async () => {
     const config = await userApi.getChargingConfig()
     if (config.status === 'success') {
       chargingConfig.value = config.data
+      // 同时获取计费配置
+      if (config.data.billing) {
+        billingConfig.value = {
+          ...billingConfig.value,
+          ...config.data.billing
+        }
+      }
     }
   } catch (error) {
     console.error('获取充电配置失败:', error)
     // 使用默认值
+  }
+}
+
+// 获取当前时段
+const getCurrentTimePeriod = () => {
+  const hour = new Date().getHours()
+  const periods = billingConfig.value.time_periods
+  
+  // 检查峰时
+  for (const [start, end] of periods.peak_times || []) {
+    if (hour >= start && hour < end) return '峰时'
+  }
+  
+  // 检查谷时（需要处理跨日情况）
+  for (const [start, end] of periods.valley_times || []) {
+    if (start > end) { // 跨日情况，如23:00-7:00
+      if (hour >= start || hour < end) return '谷时'
+    } else {
+      if (hour >= start && hour < end) return '谷时'
+    }
+  }
+  
+  // 默认为平时
+  return '平时'
+}
+
+// 获取当前电价
+const getCurrentElectricityPrice = () => {
+  const period = getCurrentTimePeriod()
+  switch (period) {
+    case '峰时': return billingConfig.value.peak_time_price
+    case '谷时': return billingConfig.value.valley_time_price
+    default: return billingConfig.value.normal_time_price
+  }
+}
+
+// 计算预计费用和时间
+const calculateEstimates = () => {
+  if (!chargingForm.requested_amount || !chargingForm.charging_mode) {
+    estimatedCost.value = ''
+    estimatedTime.value = ''
+    costBreakdown.value = null
+    return
+  }
+  
+  // 计算充电时间：充电量/充电效率 = 时间
+  // 例如：50kWh / 50kW = 1h = 60分钟
+  const power = chargingForm.charging_mode === 'fast' 
+    ? chargingConfig.value.fast_charging_power 
+    : chargingConfig.value.trickle_charging_power
+  
+  const timeHours = chargingForm.requested_amount / power
+  const totalMinutes = Math.round(timeHours * 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  
+  if (hours > 0) {
+    estimatedTime.value = minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`
+  } else {
+    estimatedTime.value = `${minutes}分钟`
+  }
+  
+  // 计算费用
+  const electricityPrice = getCurrentElectricityPrice()
+  const serviceFeePrice = billingConfig.value.service_fee_price
+  
+  const electricityCost = (chargingForm.requested_amount * electricityPrice).toFixed(2)
+  const serviceCost = (chargingForm.requested_amount * serviceFeePrice).toFixed(2)
+  const totalCost = (parseFloat(electricityCost) + parseFloat(serviceCost)).toFixed(2)
+  
+  estimatedCost.value = totalCost
+  costBreakdown.value = {
+    electricityCost,
+    serviceCost
   }
 }
 
@@ -681,6 +785,16 @@ onMounted(() => {
   overflow-y: auto;
 }
 
+.detail-collapse {
+  margin-bottom: 20px;
+}
+
+.detail-collapse .el-collapse-item__header {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
 .detail-section {
   margin-bottom: 25px;
 }
@@ -721,6 +835,56 @@ onMounted(() => {
   font-size: 12px;
   color: #8492a6;
   margin-top: 5px;
+}
+
+/* 预估显示样式 */
+.estimation-display {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+  border-left: 4px solid #409eff;
+}
+
+.estimate-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.estimate-item label {
+  color: #606266;
+  font-weight: 500;
+}
+
+.estimate-value {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.estimate-value.cost {
+  color: #e6a23c;
+  font-size: 16px;
+}
+
+.cost-breakdown {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.breakdown-note {
+  margin-top: 8px;
+  text-align: center;
 }
 
 /* 响应式设计 */

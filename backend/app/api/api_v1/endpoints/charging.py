@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.core.database import get_db
@@ -31,14 +31,16 @@ class ChargingRecordResponse(BaseModel):
     id: int
     record_number: str
     charging_amount: float
-    charging_duration: float
-    start_time: datetime
-    end_time: datetime
-    electricity_fee: float
-    service_fee: float
-    total_fee: float
-    unit_price: float
-    time_period: str
+    charging_duration: Optional[float] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    electricity_fee: Optional[float] = None
+    service_fee: Optional[float] = None
+    total_fee: Optional[float] = None
+    unit_price: Optional[float] = None
+    time_period: Optional[str] = None
+    status: str = "created"
+    created_at: datetime
     
     class Config:
         from_attributes = True
@@ -186,11 +188,28 @@ def get_charging_records(
     db: Session = Depends(get_db)
 ):
     """查看用户的充电详单"""
-    records = db.query(ChargingRecord).filter(
-        ChargingRecord.user_id == current_user.id
-    ).order_by(ChargingRecord.created_at.desc()).all()
-    
-    return records
+    try:
+        # 检查表是否存在
+        from sqlalchemy import inspect
+        inspector = inspect(db.bind)
+        tables = inspector.get_table_names()
+        
+        if 'charging_records' not in tables:
+            print("充电记录表不存在，返回空列表")
+            return []
+        
+        records = db.query(ChargingRecord).filter(
+            ChargingRecord.user_id == current_user.id
+        ).order_by(ChargingRecord.created_at.desc()).all()
+        
+        return records or []
+        
+    except Exception as e:
+        print(f"获取充电记录时出错: {e}")
+        import traceback
+        traceback.print_exc()
+        # 如果查询失败，返回空列表而不是抛出异常
+        return []
 
 @router.get("/records/{record_id}", response_model=ChargingRecordResponse, summary="查看特定充电详单")
 def get_charging_record(
