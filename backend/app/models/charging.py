@@ -45,6 +45,27 @@ class ChargingPile(Base):
     
     # 关联充电记录
     charging_records = relationship("ChargingRecord", back_populates="charging_pile")
+    
+    def get_current_charging_order(self, db_session):
+        """获取当前正在充电的订单"""
+        return db_session.query(ChargingRecord).filter(
+            ChargingRecord.charging_pile_id == self.id,
+            ChargingRecord.status == "charging"
+        ).first()
+    
+    def get_queuing_orders(self, db_session):
+        """获取排队中的订单列表（按创建时间排序）"""
+        return db_session.query(ChargingRecord).filter(
+            ChargingRecord.charging_pile_id == self.id,
+            ChargingRecord.status == "assigned"
+        ).order_by(ChargingRecord.created_at).all()
+    
+    def get_all_active_orders(self, db_session):
+        """获取所有活跃订单（充电中 + 排队中）"""
+        return db_session.query(ChargingRecord).filter(
+            ChargingRecord.charging_pile_id == self.id,
+            ChargingRecord.status.in_(["charging", "assigned"])
+        ).order_by(ChargingRecord.created_at).all()
 
 class ChargingQueue(Base):
     """充电队列模型"""
@@ -87,6 +108,7 @@ class ChargingRecord(Base):
     # 充电信息
     charging_amount = Column(Float, nullable=False)  # 充电电量(度)
     charging_duration = Column(Float, nullable=True)  # 充电时长(小时) - 充电结束时更新
+    remaining_time = Column(Integer, nullable=True)  # 剩余时间(分钟) - 开始充电时设置，每分钟递减
     start_time = Column(DateTime(timezone=True), nullable=True)  # 启动时间
     end_time = Column(DateTime(timezone=True), nullable=True)  # 停止时间
     

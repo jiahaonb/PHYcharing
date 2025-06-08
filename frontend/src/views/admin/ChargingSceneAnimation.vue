@@ -82,7 +82,7 @@
               v-for="vehicle in stayingVehicles" 
               :key="`stay-${vehicle.id}`"
               class="vehicle-item stay"
-              @click="showVehicleDetail(vehicle)"
+              @click="showStayingVehicleDetail(vehicle)"
             >
               <div class="vehicle-icon">
                 <el-icon><Van /></el-icon>
@@ -118,18 +118,18 @@
                 <div class="queue-line" v-else>
                   <div 
                     v-for="(vehicle, index) in fastWaitingVehicles" 
-                    :key="`fast-wait-${vehicle.id}`"
+                    :key="`fast-wait-${vehicle.record_number}`"
                     class="vehicle-item waiting fast"
-                    @click="showVehicleDetail(vehicle)"
+                    @click="showOrderDetail(vehicle)"
                   >
-                    <div class="queue-position">{{ index + 1 }}</div>
+                    <div class="queue-position">{{ vehicle.queue_position }}</div>
                     <div class="vehicle-icon">
                       <el-icon><Van /></el-icon>
                     </div>
                     <div class="vehicle-info">
                       <div class="vehicle-plate">{{ vehicle.license_plate }}</div>
                       <div class="vehicle-status">快充等候</div>
-                      <div class="queue-number">{{ vehicle.queue_number }}</div>
+                      <div class="queue-number">{{ vehicle.record_number }}</div>
                     </div>
                   </div>
                 </div>
@@ -150,18 +150,18 @@
                 <div class="queue-line" v-else>
                   <div 
                     v-for="(vehicle, index) in trickleWaitingVehicles" 
-                    :key="`trickle-wait-${vehicle.id}`"
+                    :key="`trickle-wait-${vehicle.record_number}`"
                     class="vehicle-item waiting trickle"
-                    @click="showVehicleDetail(vehicle)"
+                    @click="showOrderDetail(vehicle)"
                   >
-                    <div class="queue-position">{{ index + 1 }}</div>
+                    <div class="queue-position">{{ vehicle.queue_position }}</div>
                     <div class="vehicle-icon">
                       <el-icon><Van /></el-icon>
                     </div>
                     <div class="vehicle-info">
                       <div class="vehicle-plate">{{ vehicle.license_plate }}</div>
                       <div class="vehicle-status">慢充等候</div>
-                      <div class="queue-number">{{ vehicle.queue_number }}</div>
+                      <div class="queue-number">{{ vehicle.record_number }}</div>
                     </div>
                   </div>
                 </div>
@@ -192,7 +192,20 @@
                   <div class="pile-status" :class="getPileStatusClass(pile.status)">
                     {{ getPileStatusText(pile.status) }}
                   </div>
-                  <div class="pile-power">{{ pile.power }}kW</div>
+                  <div class="pile-info-row">
+                    <!-- 剩余时间显示 -->
+                    <div class="remaining-time" v-if="pile.current_charging_order && pile.current_charging_order.remaining_time !== null && pile.current_charging_order.remaining_time !== undefined">
+                      <el-tag 
+                        :type="getRemainingTimeTagType(pile.current_charging_order.remaining_time)" 
+                        size="small"
+                        effect="dark"
+                      >
+                        <el-icon><Clock /></el-icon>
+                        {{ formatRemainingTime(pile.current_charging_order.remaining_time) }}
+                      </el-tag>
+                    </div>
+                    <div class="pile-power">{{ pile.power }}kW</div>
+                  </div>
                 </div>
                 
                 <!-- 可滑动的排队区域 -->
@@ -205,7 +218,7 @@
                         <div 
                           v-if="pile.chargingVehicle"
                           class="vehicle-item charging"
-                          @click="showVehicleDetail(pile.chargingVehicle)"
+                          @click="showOrderDetail(pile.chargingVehicle)"
                         >
                           <div class="vehicle-icon">
                             <el-icon><Van /></el-icon>
@@ -232,7 +245,7 @@
                         <div 
                           v-if="spot.vehicle"
                           class="vehicle-item queuing"
-                          @click="showVehicleDetail(spot.vehicle)"
+                          @click="showOrderDetail(spot.vehicle)"
                         >
                           <div class="vehicle-icon">
                             <el-icon><Van /></el-icon>
@@ -267,7 +280,20 @@
                   <div class="pile-status" :class="getPileStatusClass(pile.status)">
                     {{ getPileStatusText(pile.status) }}
                   </div>
-                  <div class="pile-power">{{ pile.power }}kW</div>
+                  <div class="pile-info-row">
+                    <!-- 剩余时间显示 -->
+                    <div class="remaining-time" v-if="pile.current_charging_order && pile.current_charging_order.remaining_time !== null && pile.current_charging_order.remaining_time !== undefined">
+                      <el-tag 
+                        :type="getRemainingTimeTagType(pile.current_charging_order.remaining_time)" 
+                        size="small"
+                        effect="dark"
+                      >
+                        <el-icon><Clock /></el-icon>
+                        {{ formatRemainingTime(pile.current_charging_order.remaining_time) }}
+                      </el-tag>
+                    </div>
+                    <div class="pile-power">{{ pile.power }}kW</div>
+                  </div>
                 </div>
                 
                 <!-- 可滑动的排队区域 -->
@@ -280,7 +306,7 @@
                         <div 
                           v-if="pile.chargingVehicle"
                           class="vehicle-item charging"
-                          @click="showVehicleDetail(pile.chargingVehicle)"
+                          @click="showOrderDetail(pile.chargingVehicle)"
                         >
                           <div class="vehicle-icon">
                             <el-icon><Van /></el-icon>
@@ -307,7 +333,7 @@
                         <div 
                           v-if="spot.vehicle"
                           class="vehicle-item queuing"
-                          @click="showVehicleDetail(spot.vehicle)"
+                          @click="showOrderDetail(spot.vehicle)"
                         >
                           <div class="vehicle-icon">
                             <el-icon><Van /></el-icon>
@@ -437,6 +463,20 @@
               </div>
             </el-descriptions-item>
             
+            <!-- 剩余充电时间 -->
+            <el-descriptions-item label="剩余时间" v-if="selectedVehicleOrder.remaining_time !== null && selectedVehicleOrder.remaining_time !== undefined">
+              <div class="remaining-time-info">
+                <el-tag 
+                  :type="getRemainingTimeTagType(selectedVehicleOrder.remaining_time)" 
+                  size="small"
+                  effect="dark"
+                >
+                  <el-icon><Clock /></el-icon>
+                  {{ formatRemainingTime(selectedVehicleOrder.remaining_time) }}
+                </el-tag>
+              </div>
+            </el-descriptions-item>
+            
             <el-descriptions-item label="预计完成时间" v-if="selectedVehicleOrder.estimated_completion_time">
               <el-tag type="warning" size="small">{{ formatTime(selectedVehicleOrder.estimated_completion_time) }}</el-tag>
             </el-descriptions-item>
@@ -499,7 +539,8 @@ import {
   More,
   Van, 
   Plus,
-  Close
+  Close,
+  Clock
 } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { useAuthStore } from '@/store/auth'
@@ -509,7 +550,7 @@ const loading = ref(false)
 const autoRefresh = ref(true)
 const vehicles = ref([])
 const chargingPiles = ref([])
-const queueData = ref([])
+// const queueData = ref([]) // 已删除，不再使用队列数据
 const vehicleDetailVisible = ref(false)
 const selectedVehicle = ref(null)
 const selectedVehicleOrder = ref(null)
@@ -544,18 +585,27 @@ const stayingVehicles = computed(() => {
     const allVehicles = vehicles.value || []
     if (allVehicles.length === 0) return []
     
-    // 获取正在排队或充电的车辆ID列表
-    const activeVehicleIds = new Set()
-    ;(queueData.value || []).forEach(queue => {
-      if (queue.vehicle && queue.vehicle.id && 
-          (queue.status === 'waiting' || queue.status === 'queuing' || queue.status === 'charging')) {
-        activeVehicleIds.add(queue.vehicle.id)
+    // 获取正在排队或充电的车辆车牌号列表
+    const activeLicensePlates = new Set()
+    
+    // 从充电桩数据中收集活跃车辆的车牌号
+    ;(chargingPiles.value || []).forEach(pile => {
+      // 充电中的车辆
+      if (pile.current_charging_order) {
+        activeLicensePlates.add(pile.current_charging_order.vehicle_license_plate)
+      }
+      
+      // 排队中的车辆
+      if (pile.queue_orders && pile.queue_orders.length > 0) {
+        pile.queue_orders.forEach(order => {
+          activeLicensePlates.add(order.vehicle_license_plate)
+        })
       }
     })
     
     // 暂留区显示不在活跃列表中的车辆
     return allVehicles.filter(vehicle => 
-      vehicle && vehicle.id && !activeVehicleIds.has(vehicle.id)
+      vehicle && vehicle.license_plate && !activeLicensePlates.has(vehicle.license_plate)
     )
   } catch (error) {
     console.error('计算暂留车辆时出错:', error)
@@ -563,138 +613,142 @@ const stayingVehicles = computed(() => {
   }
 })
 
-// 快充等候车辆
+// 快充等候车辆 - 从充电桩数据中提取
 const fastWaitingVehicles = computed(() => {
   try {
-    return (queueData.value || [])
-      .filter(queue => 
-        queue && 
-        queue.status === 'waiting' && 
-        queue.charging_mode === 'fast'
-      )
-      .map(queue => ({
-        ...(queue.vehicle || {}),
-        queue_id: queue.id,
-        queue_number: queue.queue_number,
-        status: '快充等候'
-      }))
-      .sort((a, b) => (a.queue_number || '').localeCompare(b.queue_number || ''))
+    const waitingVehicles = []
+    
+    // 遍历所有快充桩，收集等候的车辆
+    const fastPiles = (chargingPiles.value || []).filter(pile => pile.type === 'fast')
+    
+    fastPiles.forEach(pile => {
+      if (pile.queue_orders && pile.queue_orders.length > 0) {
+        pile.queue_orders.forEach((order, index) => {
+          waitingVehicles.push({
+            record_number: order.record_number,
+            license_plate: order.vehicle_license_plate,
+            remaining_time: order.remaining_time,
+            start_time: order.start_time,
+            charging_amount: order.charging_amount,
+            queue_position: index + 1,
+            pile_id: pile.pile_id,
+            status: '快充等候'
+          })
+        })
+      }
+    })
+    
+    return waitingVehicles.sort((a, b) => a.queue_position - b.queue_position)
   } catch (error) {
     console.error('计算快充等候车辆时出错:', error)
     return []
   }
 })
 
-// 慢充等候车辆
+// 慢充等候车辆 - 从充电桩数据中提取
 const trickleWaitingVehicles = computed(() => {
   try {
-    return (queueData.value || [])
-      .filter(queue => 
-        queue && 
-        queue.status === 'waiting' && 
-        queue.charging_mode === 'trickle'
-      )
-      .map(queue => ({
-        ...(queue.vehicle || {}),
-        queue_id: queue.id,
-        queue_number: queue.queue_number,
-        status: '慢充等候'
-      }))
-      .sort((a, b) => (a.queue_number || '').localeCompare(b.queue_number || ''))
+    const waitingVehicles = []
+    
+    // 遍历所有慢充桩，收集等候的车辆
+    const tricklePiles = (chargingPiles.value || []).filter(pile => pile.type === 'trickle')
+    
+    tricklePiles.forEach(pile => {
+      if (pile.queue_orders && pile.queue_orders.length > 0) {
+        pile.queue_orders.forEach((order, index) => {
+          waitingVehicles.push({
+            record_number: order.record_number,
+            license_plate: order.vehicle_license_plate,
+            remaining_time: order.remaining_time,
+            start_time: order.start_time,
+            charging_amount: order.charging_amount,
+            queue_position: index + 1,
+            pile_id: pile.pile_id,
+            status: '慢充等候'
+          })
+        })
+      }
+    })
+    
+    return waitingVehicles.sort((a, b) => a.queue_position - b.queue_position)
   } catch (error) {
     console.error('计算慢充等候车辆时出错:', error)
     return []
   }
 })
 
-// 快充充电桩
+// 快充充电桩 - 直接使用后端返回的数据
 const fastChargingPiles = computed(() => {
   try {
     const piles = (chargingPiles.value || [])
       .filter(pile => pile.type === 'fast')
       .map(pile => {
-        // 获取该充电桩的所有队列车辆（排队中和充电中）
-        const pileQueues = (queueData.value || [])
-          .filter(queue => 
-            queue.charging_pile_id === pile.id && 
-            (queue.status === 'queuing' || queue.status === 'charging')
-          )
-          .sort((a, b) => new Date(a.queue_time) - new Date(b.queue_time))
-        
-        // 分离充电中的车辆和排队中的车辆
-        const chargingVehicle = pileQueues.find(queue => queue.status === 'charging')
-        const queueingVehicles = pileQueues.filter(queue => queue.status === 'queuing')
-        
-        // 生成排队位数据（3个排队位）
+        // 构建充电车辆数据（基于当前充电订单）
+        const chargingVehicle = pile.current_charging_order ? {
+          license_plate: pile.current_charging_order.vehicle_license_plate,
+          remaining_time: pile.current_charging_order.remaining_time,
+          record_number: pile.current_charging_order.record_number,
+          start_time: pile.current_charging_order.start_time
+        } : null
+
+        // 构建排队位数据（基于排队订单，最多3个位置）
         const queueSpots = Array.from({ length: spotsPerPile.value }, (_, index) => ({
           index,
-          vehicle: queueingVehicles[index] ? {
-            ...(queueingVehicles[index].vehicle || {}),
-            queue_id: queueingVehicles[index].id,
-            queue_number: queueingVehicles[index].queue_number
+          vehicle: pile.queue_orders && pile.queue_orders[index] ? {
+            license_plate: pile.queue_orders[index].vehicle_license_plate,
+            record_number: pile.queue_orders[index].record_number,
+            queue_position: index + 1
           } : null
         }))
         
         return {
           ...pile,
-          chargingVehicle: chargingVehicle ? {
-            ...(chargingVehicle.vehicle || {}),
-            queue_id: chargingVehicle.id,
-            queue_number: chargingVehicle.queue_number
-          } : null,
+          chargingVehicle,
           queueSpots
         }
       })
     
     return piles
   } catch (error) {
-    console.error('计算快充充电桩时出错:', error)
+    console.error('处理快充充电桩数据时出错:', error)
     return []
   }
 })
 
-// 慢充充电桩
+// 慢充充电桩 - 直接使用后端返回的数据
 const trickleChargingPiles = computed(() => {
   try {
     const piles = (chargingPiles.value || [])
       .filter(pile => pile.type === 'trickle')
       .map(pile => {
-        // 获取该充电桩的所有队列车辆（排队中和充电中）
-        const pileQueues = (queueData.value || [])
-          .filter(queue => 
-            queue.charging_pile_id === pile.id && 
-            (queue.status === 'queuing' || queue.status === 'charging')
-          )
-          .sort((a, b) => new Date(a.queue_time) - new Date(b.queue_time))
-        
-        // 分离充电中的车辆和排队中的车辆
-        const chargingVehicle = pileQueues.find(queue => queue.status === 'charging')
-        const queueingVehicles = pileQueues.filter(queue => queue.status === 'queuing')
-        
-        // 生成排队位数据（3个排队位）
+        // 构建充电车辆数据（基于当前充电订单）
+        const chargingVehicle = pile.current_charging_order ? {
+          license_plate: pile.current_charging_order.vehicle_license_plate,
+          remaining_time: pile.current_charging_order.remaining_time,
+          record_number: pile.current_charging_order.record_number,
+          start_time: pile.current_charging_order.start_time
+        } : null
+
+        // 构建排队位数据（基于排队订单，最多3个位置）
         const queueSpots = Array.from({ length: spotsPerPile.value }, (_, index) => ({
           index,
-          vehicle: queueingVehicles[index] ? {
-            ...(queueingVehicles[index].vehicle || {}),
-            queue_id: queueingVehicles[index].id,
-            queue_number: queueingVehicles[index].queue_number
+          vehicle: pile.queue_orders && pile.queue_orders[index] ? {
+            license_plate: pile.queue_orders[index].vehicle_license_plate,
+            record_number: pile.queue_orders[index].record_number,
+            queue_position: index + 1
           } : null
         }))
         
         return {
           ...pile,
-          chargingVehicle: chargingVehicle ? {
-            ...(chargingVehicle.vehicle || {}),
-            queue_id: chargingVehicle.id,
-            queue_number: chargingVehicle.queue_number
-          } : null,
+          chargingVehicle,
           queueSpots
         }
       })
     
     return piles
   } catch (error) {
-    console.error('计算慢充充电桩时出错:', error)
+    console.error('处理慢充充电桩数据时出错:', error)
     return []
   }
 })
@@ -767,14 +821,14 @@ const fetchAllData = async () => {
     console.log('🔄 开始获取场景数据...')
     
     // 并行获取数据，提高效率
-    const [vehiclesResult, queueResult, pilesResult] = await Promise.allSettled([
+    const [vehiclesResult, pilesResult, configResult] = await Promise.allSettled([
       fetchVehicles(),
-      fetchQueueData(),
-      fetchChargingPiles()
+      fetchChargingPiles(),
+      fetchSystemConfig()
     ])
     
     // 检查是否有失败的请求
-    const failedRequests = [vehiclesResult, queueResult, pilesResult]
+    const failedRequests = [vehiclesResult, pilesResult, configResult]
       .filter(result => result.status === 'rejected')
     
     if (failedRequests.length > 0) {
@@ -846,14 +900,24 @@ const fetchChargingPiles = async () => {
   }
 }
 
-const fetchQueueData = async () => {
+// fetchQueueData 函数已被删除，因为不再使用队列数据
+// 现在从 fetchChargingPiles API 获取所有相关信息
+
+const fetchSystemConfig = async () => {
   try {
-    const response = await api.get('/admin/scene/charging-queue')
-    queueData.value = Array.isArray(response) ? response : []
-    console.log('✅ 获取排队数据成功，数量:', queueData.value.length)
+    const response = await api.get('/users/charging/config')
+    systemConfig.value = response || {}
+    console.log('✅ 获取系统配置成功:', {
+      快充功率: response.fast_charging_power,
+      慢充功率: response.trickle_charging_power
+    })
   } catch (error) {
-    console.error('获取排队数据失败:', error)
-    queueData.value = []
+    console.error('获取系统配置失败:', error)
+    // 使用默认值
+    systemConfig.value = {
+      fast_charging_power: 30,
+      trickle_charging_power: 7
+    }
     throw error
   }
 }
@@ -906,7 +970,8 @@ const resetAnimation = () => {
 
 
 
-const showVehicleDetail = async (vehicle) => {
+// 显示暂留区车辆详情（只显示车辆信息，不显示订单）
+const showStayingVehicleDetail = async (vehicle) => {
   try {
     if (!vehicle || !vehicle.id) {
       console.warn('车辆数据无效:', vehicle)
@@ -914,42 +979,92 @@ const showVehicleDetail = async (vehicle) => {
       return
     }
     
-    // 防止重复点击
-    if (vehicleDetailVisible.value && selectedVehicle.value?.id === vehicle.id) {
-      return
-    }
-    
-    console.log('🚗 显示车辆详情:', vehicle.license_plate)
-    selectedVehicle.value = { ...vehicle } // 创建副本，避免引用问题
-    selectedVehicleOrder.value = null // 清空之前的订单信息
-    
-    // 获取充电详单信息（对所有车辆尝试获取）
-    try {
-      console.log('📋 获取车辆充电详单:', vehicle.license_plate)
-      const orderData = await fetchVehicleOrder(vehicle)
-      selectedVehicleOrder.value = orderData // 可能为null，模板会处理
-      
-      if (orderData) {
-        console.log('✅ 获取到充电订单:', {
-          订单编号: orderData.record_number,
-          排队号: orderData.queue_number,
-          车牌号: orderData.license_plate,
-          充电模式: orderData.charging_mode,
-          申请电量: orderData.charging_amount,
-          状态: orderData.status
-        })
-      } else {
-        console.log('ℹ️ 该车辆暂无充电订单信息')
-      }
-    } catch (error) {
-      console.warn('获取充电详单失败:', error)
-      selectedVehicleOrder.value = null
-    }
+    console.log('🚗 显示暂留区车辆详情:', vehicle.license_plate)
+    selectedVehicle.value = { ...vehicle }
+    selectedVehicleOrder.value = null // 暂留区车辆不显示订单信息
     
     vehicleDetailVisible.value = true
   } catch (error) {
-    console.error('显示车辆详情失败:', error)
+    console.error('显示车辆详情失败:', error.message || error)
     ElMessage.error('显示车辆详情失败')
+  }
+}
+
+// 显示订单详情（充电区和等待区的车辆实际上是订单）
+const showOrderDetail = async (orderData) => {
+  try {
+    if (!orderData || !orderData.record_number) {
+      console.warn('订单数据无效:', orderData)
+      ElMessage.warning('订单数据无效')
+      return
+    }
+    
+    console.log('📋 显示订单详情:', orderData.record_number)
+    
+    // 根据订单数据获取完整的订单和车辆信息
+    try {
+      const response = await api.get(`/admin/charging-record/${orderData.record_number}`)
+      
+      // 构建车辆信息（用于显示）
+      selectedVehicle.value = {
+        id: response.vehicle_id,
+        license_plate: response.license_plate,
+        model: response.vehicle?.model || '未知型号',
+        battery_capacity: response.vehicle?.battery_capacity || 0,
+        status: response.status === 'charging' ? '充电中' : '排队中',
+        owner: response.vehicle?.owner || null
+      }
+      
+      // 设置订单信息
+      selectedVehicleOrder.value = {
+        record_number: response.record_number,
+        queue_number: response.queue_number,
+        license_plate: response.license_plate,
+        charging_amount: response.charging_amount,
+        charging_duration: response.charging_duration,
+        remaining_time: response.remaining_time,
+        start_time: response.start_time,
+        end_time: response.end_time,
+        electricity_fee: response.electricity_fee,
+        service_fee: response.service_fee,
+        total_fee: response.total_fee,
+        charging_mode: response.charging_mode,
+        status: response.status,
+        created_at: response.created_at
+      }
+      
+      vehicleDetailVisible.value = true
+      
+      console.log('✅ 获取到完整订单信息:', {
+        订单编号: response.record_number,
+        车牌号: response.license_plate,
+        剩余时间: response.remaining_time,
+        状态: response.status
+      })
+      
+    } catch (error) {
+      console.error('获取订单详情失败:', error.message || error)
+      ElMessage.error('获取订单详情失败')
+    }
+    
+  } catch (error) {
+    console.error('显示订单详情失败:', error.message || error)
+    ElMessage.error('显示订单详情失败')
+  }
+}
+
+// 兼容旧版本的通用点击处理函数
+const showVehicleDetail = async (vehicle) => {
+  // 判断是否为订单数据还是车辆数据
+  if (vehicle.record_number) {
+    // 如果有record_number，说明这是订单数据
+    await showOrderDetail(vehicle)
+  } else if (vehicle.id) {
+    // 如果有id但没有record_number，说明这是暂留区的车辆数据
+    await showStayingVehicleDetail(vehicle)
+  } else {
+    console.warn('无法识别的数据类型:', vehicle)
+    ElMessage.warning('数据类型错误')
   }
 }
 
@@ -1008,15 +1123,9 @@ const formatDuration = (duration) => {
 
 // 获取充电时间显示（xx分钟）
 const getChargingTime = (vehicle) => {
-  if (!vehicle || !vehicle.queue_id) return ''
+  if (!vehicle || !vehicle.start_time) return ''
   
-  // 从队列数据中找到对应的充电记录
-  const queueItem = queueData.value.find(q => q.id === vehicle.queue_id)
-  if (!queueItem || queueItem.status !== 'charging' || !queueItem.start_charging_time) {
-    return ''
-  }
-  
-  const startTime = new Date(queueItem.start_charging_time)
+  const startTime = new Date(vehicle.start_time)
   const now = new Date()
   const diffMs = now - startTime
   const diffMinutes = Math.floor(diffMs / (1000 * 60))
@@ -1024,13 +1133,10 @@ const getChargingTime = (vehicle) => {
   return `${diffMinutes}分钟`
 }
 
-// 判断车辆是否在队列中或充电中（非暂留区）
-const isVehicleInQueueOrCharging = (vehicle) => {
-  if (!vehicle.queue_id) return false
-  
-  const queueItem = queueData.value.find(q => q.id === vehicle.queue_id)
-  return queueItem && ['waiting', 'queuing', 'charging'].includes(queueItem.status)
-}
+// 判断车辆是否在队列中或充电中（非暂留区） - 已不再使用
+// const isVehicleInQueueOrCharging = (vehicle) => {
+//   // 这个函数已被 stayingVehicles computed 替代
+// }
 
 // 计算预计充电时长（基于预计完成时间）
 const getEstimatedDuration = (orderData) => {
@@ -1050,178 +1156,55 @@ const getEstimatedDuration = (orderData) => {
 const getEstimatedDurationByAmount = (orderData) => {
   if (!orderData.charging_amount || !orderData.charging_mode) return '未知'
   
-  // 根据充电模式计算预计时长
-  const power = orderData.charging_mode === 'fast' ? 50 : 7 // 快充50kW，慢充7kW
+  // 根据充电模式计算预计时长 - 使用配置服务的功率
+  const power = orderData.charging_mode === 'fast' 
+    ? (systemConfig.value.fast_charging_power) 
+    : (systemConfig.value.trickle_charging_power)
   const estimatedHours = orderData.charging_amount / power
   
   return formatDuration(estimatedHours)
 }
 
-// 获取车辆的充电详单信息
-const fetchVehicleOrder = async (vehicle) => {
-  if (!vehicle.id) {
-    throw new Error('车辆ID不存在')
-  }
+// 格式化剩余时间
+const formatRemainingTime = (minutes) => {
+  if (minutes === null || minutes === undefined) return '未知'
+  if (minutes <= 0) return '即将完成'
   
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  
+  if (hours > 0) {
+    return `${hours}小时${remainingMinutes}分钟`
+  } else {
+    return `${remainingMinutes}分钟`
+  }
+}
+
+// 获取剩余时间标签类型
+const getRemainingTimeTagType = (minutes) => {
+  if (minutes === null || minutes === undefined) return 'info'
+  if (minutes <= 0) return 'success'
+  if (minutes <= 15) return 'danger'   // 15分钟内 - 红色
+  if (minutes <= 60) return 'warning'  // 1小时内 - 橙色  
+  return 'primary'                     // 超过1小时 - 蓝色
+}
+
+// 剩余时间相关函数（简化版，主要数据已经从充电桩API获取）
+const getVehicleRemainingTime = async (vehicle_id) => {
   try {
-    console.log('🔍 获取车辆充电订单信息:', vehicle.license_plate)
-    
-    // 方法1: 首先尝试直接获取充电记录
-    try {
-      console.log('📋 尝试获取充电记录...')
-      const recordsResponse = await api.get('/admin/charging/records')
-      console.log('充电记录API响应:', recordsResponse)
-      
-      if (recordsResponse && Array.isArray(recordsResponse)) {
-        // 查找该车辆的最新充电记录
-        const vehicleRecords = recordsResponse.filter(record => 
-          record.vehicle_id === vehicle.id || record.license_plate === vehicle.license_plate
-        ).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        
-        console.log('找到车辆充电记录:', vehicleRecords.length, '条')
-        
-        if (vehicleRecords.length > 0) {
-          const latestRecord = vehicleRecords[0]
-          console.log('最新充电记录:', latestRecord)
-          
-          // 如果有排队ID，获取队列状态信息
-          let queueInfo = null
-          if (vehicle.queue_id) {
-            queueInfo = queueData.value.find(q => q.id === vehicle.queue_id)
-          } else if (latestRecord.queue_number) {
-            queueInfo = queueData.value.find(q => q.queue_number === latestRecord.queue_number)
-          }
-          
-          const orderData = {
-            ...latestRecord,
-            queue_number: latestRecord.queue_number || (queueInfo ? queueInfo.queue_number : 'N/A'),
-            // 如果正在充电，更新时长信息
-            charging_duration: queueInfo && queueInfo.status === 'charging' && queueInfo.start_charging_time 
-              ? (new Date() - new Date(queueInfo.start_charging_time)) / (1000 * 60 * 60)
-              : latestRecord.charging_duration,
-            // 队列信息
-            queue_status: queueInfo ? queueInfo.status : latestRecord.status,
-            estimated_completion_time: queueInfo ? queueInfo.estimated_completion_time : null,
-            charging_pile: queueInfo && queueInfo.charging_pile_id ? { pile_number: `桩${queueInfo.charging_pile_id}` } : null
-          }
-          
-          console.log('✅ 构造的订单数据:', orderData)
-          return orderData
-        }
-      }
-    } catch (error) {
-      console.warn('获取充电记录失败:', error)
+    const response = await api.get(`/admin/vehicle/${vehicle_id}/order`)
+    if (response && response.remaining_time !== null && response.remaining_time !== undefined) {
+      return response.remaining_time
     }
-    
-         // 方法2: 如果没有充电记录，但有queue_id，尝试通过API获取详细信息
-     if (vehicle.queue_id) {
-       try {
-         console.log('📋 尝试通过API获取队列详细信息...')
-         const queueDetailResponse = await api.get(`/admin/queue/${vehicle.queue_id}/detail`)
-         console.log('队列详细信息API响应:', queueDetailResponse)
-         
-         if (queueDetailResponse && queueDetailResponse.charging_record) {
-           const record = queueDetailResponse.charging_record
-           const orderData = {
-             record_number: record.record_number,
-             queue_number: record.queue_number,
-             license_plate: record.license_plate,
-             charging_mode: record.charging_mode,
-             charging_amount: record.charging_amount,
-             status: record.status,
-             created_at: record.created_at,
-             start_time: record.start_time,
-             end_time: record.end_time,
-             charging_duration: record.charging_duration,
-             electricity_fee: record.electricity_fee,
-             service_fee: record.service_fee,
-             total_fee: record.total_fee,
-             unit_price: record.unit_price,
-             time_period: record.time_period,
-             charging_pile: record.charging_pile_id ? { pile_number: `桩${record.charging_pile_id}` } : null
-           }
-           
-           console.log('✅ 从队列API获取的订单数据:', orderData)
-           return orderData
-         }
-       } catch (error) {
-         console.warn('通过API获取队列详细信息失败:', error)
-       }
-       
-       // 如果API失败，从本地队列数据构造基本信息
-       console.log('📋 回退到本地队列数据构造订单信息...')
-       const queueItem = queueData.value.find(q => q.id === vehicle.queue_id)
-       
-       if (queueItem) {
-         console.log('找到队列信息:', queueItem)
-         
-         // 不生成假的订单编号，直接显示队列基本信息
-         const orderData = {
-           record_number: 'N/A', // 不要生成假的订单编号
-           queue_number: queueItem.queue_number,
-           charging_mode: queueItem.charging_mode,
-           charging_amount: queueItem.requested_amount,
-           status: queueItem.status,
-           created_at: queueItem.queue_time,
-           start_time: queueItem.start_charging_time,
-           estimated_completion_time: queueItem.estimated_completion_time,
-           charging_pile: queueItem.charging_pile_id ? { pile_number: `桩${queueItem.charging_pile_id}` } : null,
-           license_plate: vehicle.license_plate,
-           // 计算预估费用
-           electricity_fee: calculateEstimatedFee(queueItem.requested_amount).electricity_fee,
-           service_fee: calculateEstimatedFee(queueItem.requested_amount).service_fee,
-           total_fee: calculateEstimatedFee(queueItem.requested_amount).total_fee,
-           // 如果正在充电，计算当前充电时长
-           charging_duration: queueItem.status === 'charging' && queueItem.start_charging_time
-             ? (new Date() - new Date(queueItem.start_charging_time)) / (1000 * 60 * 60)
-             : null
-         }
-         
-         console.log('✅ 从队列构造的基本数据:', orderData)
-         return orderData
-       }
-     }
-    
-    // 方法3: 如果都没有，尝试通过车牌号查找
-    if (vehicle.license_plate) {
-      console.log('📋 尝试通过车牌号查找队列信息...')
-      const queueItem = queueData.value.find(q => 
-        q.vehicle && q.vehicle.license_plate === vehicle.license_plate
-      )
-      
-      if (queueItem) {
-        const orderData = {
-          record_number: generateEstimatedOrderNumber(queueItem.charging_mode, queueItem.queue_time),
-          queue_number: queueItem.queue_number,
-          charging_mode: queueItem.charging_mode,
-          charging_amount: queueItem.requested_amount,
-          status: queueItem.status,
-          created_at: queueItem.queue_time,
-          start_time: queueItem.start_charging_time,
-          estimated_completion_time: queueItem.estimated_completion_time,
-          charging_pile: queueItem.charging_pile_id ? { pile_number: `桩${queueItem.charging_pile_id}` } : null,
-          license_plate: vehicle.license_plate,
-          electricity_fee: calculateEstimatedFee(queueItem.requested_amount).electricity_fee,
-          service_fee: calculateEstimatedFee(queueItem.requested_amount).service_fee,
-          total_fee: calculateEstimatedFee(queueItem.requested_amount).total_fee,
-          charging_duration: queueItem.status === 'charging' && queueItem.start_charging_time
-            ? (new Date() - new Date(queueItem.start_charging_time)) / (1000 * 60 * 60)
-            : null
-        }
-        
-        console.log('✅ 通过车牌号构造的订单数据:', orderData)
-        return orderData
-      }
-    }
-    
-    console.log('ℹ️ 该车辆没有找到订单信息')
     return null
-    
   } catch (error) {
-    console.error('❌ 获取车辆订单信息失败:', error)
+    console.warn(`获取车辆 ${vehicle_id} 剩余时间失败:`, error)
     return null
   }
 }
+
+// 旧的 fetchVehicleOrder 函数已被删除，因为依赖队列数据
+// 现在直接在 showOrderDetail 中通过订单编号获取详细信息
 
 // 不再生成假的订单编号，避免误导用户
 
@@ -1952,8 +1935,9 @@ onUnmounted(() => {
   }
 }
 
-/* 订单信息特殊样式 */
-.order-number {
+/* 订单弹窗中的订单号样式 */
+.el-descriptions .order-number,
+.charging-order-info .order-number {
   font-family: 'Courier New', monospace;
   font-weight: bold;
   color: #409EFF;
@@ -1961,9 +1945,15 @@ onUnmounted(() => {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
+  position: static !important;
+  width: auto !important;
+  height: auto !important;
+  display: inline !important;
 }
 
-.queue-number {
+/* 订单弹窗中的队列号样式 */
+.el-descriptions .queue-number,
+.charging-order-info .queue-number {
   font-family: 'Courier New', monospace;
   font-weight: bold;
   color: #E6A23C;
@@ -1971,12 +1961,58 @@ onUnmounted(() => {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
+  position: static !important;
+  width: auto !important;
+  height: auto !important;
+  display: inline !important;
+}
+
+/* 充电订单信息容器 */
+.charging-order-info {
+  font-size: 14px;
+}
+
+.charging-order-info .el-descriptions {
+  font-size: 14px;
+}
+
+.charging-order-info .el-descriptions-item__label {
+  font-size: 14px !important;
+}
+
+.charging-order-info .el-descriptions-item__content {
+  font-size: 14px !important;
 }
 
 .charging-duration-info {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.remaining-time-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pile-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pile-info-row .remaining-time {
+  flex: 1;
+  min-width: 0;
+}
+
+.pile-info-row .pile-power {
+  flex-shrink: 0;
+  font-weight: bold;
+  color: #409EFF;
 }
 
 .estimated-duration {
@@ -2080,7 +2116,8 @@ onUnmounted(() => {
   margin-top: 5px;
 }
 
-.queue-number {
+/* 车辆上的排队号徽章样式 */
+.vehicle-item .queue-number {
   position: absolute;
   top: -5px;
   right: -5px;

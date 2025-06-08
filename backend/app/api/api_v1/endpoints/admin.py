@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import User, Vehicle, ChargingPile, ChargingQueue, ChargingRecord, ChargingPileStatus, QueueStatus
 from app.services.charging_service import ChargingScheduleService
 from app.services.config_service import config_service
+from app.utils.timezone import format_china_time, format_currency
 from .auth import get_current_user
 
 router = APIRouter()
@@ -92,12 +93,24 @@ class VehicleWithOwnerResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ChargingOrderResponse(BaseModel):
+    record_number: str
+    remaining_time: Optional[int] = None
+    charging_amount: float
+    start_time: Optional[datetime] = None
+    vehicle_license_plate: str
+    
+    class Config:
+        from_attributes = True
+
 class ChargingPileWithSpotsResponse(BaseModel):
     id: int
     pile_id: str
     type: str
     status: str
     power: float
+    current_charging_order: Optional[ChargingOrderResponse] = None  # 当前充电订单
+    queue_orders: List[ChargingOrderResponse] = []  # 排队订单列表
     
     class Config:
         from_attributes = True
@@ -221,7 +234,12 @@ def get_daily_report(
             report_data.append({
                 "time_period": date,
                 "pile_number": pile_number,
-                **stats
+                "charging_count": stats["charging_count"],
+                "charging_duration": stats["charging_duration"],
+                "charging_amount": stats["charging_amount"],
+                "electricity_fee": format_currency(stats["electricity_fee"]),
+                "service_fee": format_currency(stats["service_fee"]),
+                "total_fee": format_currency(stats["total_fee"])
             })
         
         return report_data
@@ -607,6 +625,7 @@ def get_charging_piles_for_scene(
 ):
     """获取充电桩信息，用于充电场景动画"""
     try:
+        from sqlalchemy.orm import joinedload
         piles = db.query(ChargingPile).all()
         
         result = []
@@ -626,12 +645,38 @@ def get_charging_piles_for_scene(
                 else:
                     status_str = str(status)
                 
+                # 直接通过充电桩获取当前充电订单
+                current_charging_order = pile.get_current_charging_order(db)
+                current_charging_data = None
+                if current_charging_order:
+                    current_charging_data = {
+                        "record_number": current_charging_order.record_number,
+                        "remaining_time": current_charging_order.remaining_time,
+                        "charging_amount": current_charging_order.charging_amount,
+                        "start_time": format_china_time(current_charging_order.start_time),
+                        "vehicle_license_plate": current_charging_order.license_plate
+                    }
+                
+                # 直接通过充电桩获取排队订单列表
+                queue_orders_data = []
+                queue_orders = pile.get_queuing_orders(db)
+                for order in queue_orders:
+                    queue_orders_data.append({
+                        "record_number": order.record_number,
+                        "remaining_time": order.remaining_time,
+                        "charging_amount": order.charging_amount,
+                        "start_time": format_china_time(order.start_time),
+                        "vehicle_license_plate": order.license_plate
+                    })
+                
                 pile_data = {
                     "id": pile.id,
                     "pile_id": pile.pile_number,
                     "type": "fast" if mode_str == "fast" else "trickle",
                     "status": status_str,
-                    "power": pile.power or 0.0
+                    "power": pile.power or 0.0,
+                    "current_charging_order": current_charging_data,
+                    "queue_orders": queue_orders_data
                 }
                 result.append(pile_data)
             except Exception as e:
@@ -1151,10 +1196,10 @@ async def get_user_charging_orders(
             "charging_mode": record.charging_mode,
             "start_time": record.start_time,
             "end_time": record.end_time,
-            "electricity_fee": record.electricity_fee,
-            "service_fee": record.service_fee,
-            "total_fee": record.total_fee,
-            "unit_price": record.unit_price,
+            "electricity_fee": format_currency(record.electricity_fee),
+            "service_fee": format_currency(record.service_fee),
+            "total_fee": format_currency(record.total_fee),
+            "unit_price": format_currency(record.unit_price),
             "time_period": record.time_period,
             "created_at": record.created_at,
             "vehicle": {
@@ -1267,11 +1312,11 @@ async def get_vehicle_detail_admin(
                     "charging_duration": record.charging_duration,
                     "start_time": record.start_time,
                     "end_time": record.end_time,
-                    "total_fee": record.total_fee,
+                    "total_fee": format_currency(record.total_fee),
                     "charging_mode": record.charging_mode,
-                    "electricity_fee": record.electricity_fee,
-                    "service_fee": record.service_fee,
-                    "unit_price": record.unit_price,
+                    "electricity_fee": format_currency(record.electricity_fee),
+                    "service_fee": format_currency(record.service_fee),
+                    "unit_price": format_currency(record.unit_price),
                     "time_period": record.time_period
                 } for record in charging_history
             ],
@@ -1350,10 +1395,10 @@ async def get_queue_detail(
                 "start_time": charging_record.start_time,
                 "end_time": charging_record.end_time,
                 "charging_duration": charging_record.charging_duration,
-                "electricity_fee": charging_record.electricity_fee,
-                "service_fee": charging_record.service_fee,
-                "total_fee": charging_record.total_fee,
-                "unit_price": charging_record.unit_price,
+                "electricity_fee": format_currency(charging_record.electricity_fee),
+                "service_fee": format_currency(charging_record.service_fee),
+                "total_fee": format_currency(charging_record.total_fee),
+                "unit_price": format_currency(charging_record.unit_price),
                 "time_period": charging_record.time_period,
                 "charging_pile_id": charging_record.charging_pile_id
             }
@@ -1390,10 +1435,10 @@ async def get_vehicle_order(
                     "start_time": charging_record.start_time,
                     "end_time": charging_record.end_time,
                     "charging_duration": charging_record.charging_duration,
-                    "electricity_fee": charging_record.electricity_fee,
-                    "service_fee": charging_record.service_fee,
-                    "total_fee": charging_record.total_fee,
-                    "unit_price": charging_record.unit_price,
+                    "electricity_fee": format_currency(charging_record.electricity_fee),
+                    "service_fee": format_currency(charging_record.service_fee),
+                    "total_fee": format_currency(charging_record.total_fee),
+                    "unit_price": format_currency(charging_record.unit_price),
                     "time_period": charging_record.time_period,
                     "charging_pile_id": charging_record.charging_pile_id
                 }
@@ -1402,4 +1447,76 @@ async def get_vehicle_order(
             return {"success": False, "error": "No order found"}
     except Exception as e:
         print(f"获取车辆订单失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/charging-record/{record_number}", summary="通过订单编号获取充电记录详情")
+async def get_charging_record_by_number(
+    record_number: str,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """通过订单编号获取充电记录详情"""
+    try:
+        # 查找充电记录
+        charging_record = db.query(ChargingRecord).filter(
+            ChargingRecord.record_number == record_number
+        ).first()
+        
+        if not charging_record:
+            raise HTTPException(status_code=404, detail="订单不存在")
+        
+        # 获取关联的车辆和用户信息
+        vehicle = db.query(Vehicle).filter(Vehicle.id == charging_record.vehicle_id).first()
+        user = db.query(User).filter(User.id == charging_record.user_id).first()
+        charging_pile = None
+        if charging_record.charging_pile_id:
+            charging_pile = db.query(ChargingPile).filter(ChargingPile.id == charging_record.charging_pile_id).first()
+        
+        return {
+            "id": charging_record.id,
+            "record_number": charging_record.record_number,
+            "queue_number": charging_record.queue_number,
+            "license_plate": charging_record.license_plate,
+            "charging_amount": charging_record.charging_amount,
+            "charging_duration": charging_record.charging_duration,
+            "remaining_time": charging_record.remaining_time,
+            "start_time": format_china_time(charging_record.start_time),
+            "end_time": format_china_time(charging_record.end_time),
+            "electricity_fee": format_currency(charging_record.electricity_fee),
+            "service_fee": format_currency(charging_record.service_fee),
+            "total_fee": format_currency(charging_record.total_fee),
+            "unit_price": format_currency(charging_record.unit_price),
+            "time_period": charging_record.time_period,
+            "charging_mode": charging_record.charging_mode.value if hasattr(charging_record.charging_mode, 'value') else str(charging_record.charging_mode),
+            "status": charging_record.status,
+            "created_at": format_china_time(charging_record.created_at),
+            "updated_at": format_china_time(charging_record.updated_at),
+            "vehicle_id": charging_record.vehicle_id,
+            "user_id": charging_record.user_id,
+            "charging_pile_id": charging_record.charging_pile_id,
+            "vehicle": {
+                "id": vehicle.id if vehicle else None,
+                "license_plate": vehicle.license_plate if vehicle else charging_record.license_plate,
+                "model": getattr(vehicle, 'model', '未知型号') if vehicle else '未知型号',
+                "battery_capacity": getattr(vehicle, 'battery_capacity', 0) if vehicle else 0,
+                "owner": {
+                    "id": user.id if user else None,
+                    "username": user.username if user else "未知用户",
+                    "email": user.email if user else "",
+                    "phone": getattr(user, 'phone', None) if user else None
+                } if user else None
+            } if vehicle else None,
+            "charging_pile": {
+                "id": charging_pile.id if charging_pile else None,
+                "pile_number": charging_pile.pile_number if charging_pile else "未分配",
+                "power": charging_pile.power if charging_pile else 0
+            } if charging_pile else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"通过订单编号获取充电记录失败: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

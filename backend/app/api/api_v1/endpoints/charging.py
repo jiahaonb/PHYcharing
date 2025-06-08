@@ -6,6 +6,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.models import User, ChargingQueue, ChargingRecord, ChargingMode, QueueStatus
 from app.services.charging_service import ChargingScheduleService
+from app.utils.timezone import format_china_time, format_currency
 from .auth import get_current_user
 
 router = APIRouter()
@@ -34,6 +35,7 @@ class ChargingRecordResponse(BaseModel):
     license_plate: str
     charging_amount: float
     charging_duration: Optional[float] = None
+    remaining_time: Optional[int] = None  # 剩余时间（分钟）
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     electricity_fee: float
@@ -185,7 +187,7 @@ def cancel_charging(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/records", response_model=List[ChargingRecordResponse], summary="查看充电详单")
+@router.get("/records", summary="查看充电详单")
 def get_charging_records(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -205,7 +207,30 @@ def get_charging_records(
             ChargingRecord.user_id == current_user.id
         ).order_by(ChargingRecord.created_at.desc()).all()
         
-        return records or []
+        # 手动序列化数据，格式化金额和时间
+        result = []
+        for record in records or []:
+            result.append({
+                "id": record.id,
+                "record_number": record.record_number,
+                "queue_number": record.queue_number,
+                "license_plate": record.license_plate,
+                "charging_amount": record.charging_amount,
+                "charging_duration": record.charging_duration,
+                "remaining_time": record.remaining_time,
+                "start_time": format_china_time(record.start_time),
+                "end_time": format_china_time(record.end_time),
+                "electricity_fee": format_currency(record.electricity_fee),
+                "service_fee": format_currency(record.service_fee),
+                "total_fee": format_currency(record.total_fee),
+                "unit_price": format_currency(record.unit_price),
+                "time_period": record.time_period,
+                "charging_mode": record.charging_mode.value if hasattr(record.charging_mode, 'value') else str(record.charging_mode),
+                "status": record.status,
+                "created_at": format_china_time(record.created_at)
+            })
+        
+        return result
         
     except Exception as e:
         print(f"获取充电记录时出错: {e}")
@@ -214,7 +239,7 @@ def get_charging_records(
         # 如果查询失败，返回空列表而不是抛出异常
         return []
 
-@router.get("/records/{record_id}", response_model=ChargingRecordResponse, summary="查看特定充电详单")
+@router.get("/records/{record_id}", summary="查看特定充电详单")
 def get_charging_record(
     record_id: int,
     current_user: User = Depends(get_current_user),
@@ -229,4 +254,23 @@ def get_charging_record(
     if not record:
         raise HTTPException(status_code=404, detail="充电记录不存在")
     
-    return record 
+    # 手动序列化数据，格式化金额和时间
+    return {
+        "id": record.id,
+        "record_number": record.record_number,
+        "queue_number": record.queue_number,
+        "license_plate": record.license_plate,
+        "charging_amount": record.charging_amount,
+        "charging_duration": record.charging_duration,
+        "remaining_time": record.remaining_time,
+        "start_time": format_china_time(record.start_time),
+        "end_time": format_china_time(record.end_time),
+        "electricity_fee": format_currency(record.electricity_fee),
+        "service_fee": format_currency(record.service_fee),
+        "total_fee": format_currency(record.total_fee),
+        "unit_price": format_currency(record.unit_price),
+        "time_period": record.time_period,
+        "charging_mode": record.charging_mode.value if hasattr(record.charging_mode, 'value') else str(record.charging_mode),
+        "status": record.status,
+        "created_at": format_china_time(record.created_at)
+    } 

@@ -166,8 +166,8 @@
                 <el-col :span="12">
                   <el-form-item label="充电模式" prop="charging_mode">
                     <el-radio-group v-model="chargingForm.charging_mode" @change="calculateEstimates">
-                      <el-radio label="fast">快充 ({{ chargingConfig.fast_charging_power || 60 }}kW)</el-radio>
-                      <el-radio label="trickle">慢充 ({{ chargingConfig.trickle_charging_power || 7 }}kW)</el-radio>
+                      <el-radio label="fast">快充 ({{ chargingConfig.fast_charging_power}}kW)</el-radio>
+                      <el-radio label="trickle">慢充 ({{ chargingConfig.trickle_charging_power}}kW)</el-radio>
                     </el-radio-group>
                   </el-form-item>
                 </el-col>

@@ -31,6 +31,10 @@ async def startup_event():
     # 启动周期性调度器
     system_scheduler.start_periodic_scheduler()
     
+    # 启动剩余时间更新服务
+    from app.services.remaining_time_service import remaining_time_service
+    remaining_time_service.start()
+    
     logger.info("系统启动完成")
 
 # 跨域中间件

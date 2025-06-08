@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import ChargingPile, ChargingQueue, ChargingRecord, ChargingMode, QueueStatus, ChargingPileStatus
 from app.core.config import settings
+from app.utils.timezone import get_china_time, utc_to_china_time
 import asyncio
 
 class ChargingScheduleService:
@@ -185,7 +186,17 @@ class ChargingScheduleService:
         waiting_time = self.calculate_waiting_time(pile)
         charging_time = queue_record.requested_amount / pile.power
         
-        queue_record.estimated_completion_time = datetime.now() + timedelta(hours=waiting_time + charging_time)
+        queue_record.estimated_completion_time = get_china_time() + timedelta(hours=waiting_time + charging_time)
+        
+        # 同时更新对应的充电订单状态
+        charging_record = self.db.query(ChargingRecord).filter(
+            ChargingRecord.queue_number == queue_record.queue_number
+        ).first()
+        
+        if charging_record:
+            charging_record.charging_pile_id = pile.id
+            charging_record.status = "assigned"  # 已分配充电桩，排队中
+            print(f"📋 订单 {charging_record.record_number} 已分配到充电桩 {pile.pile_number}")
         
         self.db.commit()
     
@@ -239,7 +250,7 @@ class ChargingScheduleService:
         if queue_record and queue_record.status == QueueStatus.QUEUING:
             # 更新队列状态
             queue_record.status = QueueStatus.CHARGING
-            start_time = datetime.now()
+            start_time = get_china_time()
             queue_record.start_charging_time = start_time
             
             # 同步更新充电记录的启动时间和充电桩信息
@@ -251,6 +262,17 @@ class ChargingScheduleService:
                 charging_record.start_time = start_time
                 charging_record.charging_pile_id = queue_record.charging_pile_id
                 charging_record.status = "charging"
+                
+                # 计算预计剩余时间（分钟）
+                pile = self.db.query(ChargingPile).filter(
+                    ChargingPile.id == queue_record.charging_pile_id
+                ).first()
+                if pile:
+                    # 预计充电时长 = 充电量 / 充电功率 (小时)
+                    estimated_hours = charging_record.charging_amount / pile.power
+                    # 转换为分钟并设置剩余时间
+                    charging_record.remaining_time = int(estimated_hours * 60)
+                    print(f"⏰ 设置订单 {charging_record.record_number} 剩余时间: {charging_record.remaining_time}分钟")
             
             # 同步更新充电桩状态为正在充电
             if queue_record.charging_pile_id:
@@ -275,7 +297,7 @@ class ChargingScheduleService:
             raise Exception("无效的充电记录")
         
         # 计算费用
-        end_time = datetime.now()
+        end_time = get_china_time()
         start_time = queue_record.start_charging_time
         actual_duration = (end_time - start_time).total_seconds() / 3600  # 转换为小时
         
@@ -304,6 +326,7 @@ class ChargingScheduleService:
         charging_record.charging_pile_id = queue_record.charging_pile_id
         charging_record.charging_amount = actual_amount
         charging_record.charging_duration = actual_duration
+        charging_record.remaining_time = 0  # 充电完成，剩余时间设为0
         charging_record.start_time = start_time
         charging_record.end_time = end_time
         charging_record.electricity_fee = electricity_fee
@@ -365,7 +388,7 @@ class ChargingScheduleService:
     
     def generate_record_number(self, charging_mode: ChargingMode) -> str:
         """生成详单编号"""
-        now = datetime.now()
+        now = get_china_time()
         
         # 充电模式前缀
         mode_prefix = "KUAI" if charging_mode == ChargingMode.FAST else "MAN"
@@ -396,7 +419,7 @@ class ChargingScheduleService:
         record_number = self.generate_record_number(charging_mode)
         
         # 预估费用（使用当前时段计算）
-        current_time = datetime.now()
+        current_time = get_china_time()
         electricity_fee, service_fee, total_fee, unit_price, time_period = self.calculate_fees(
             charging_amount, current_time, current_time
         )
@@ -464,7 +487,7 @@ class ChargingScheduleService:
                 ).first()
                 waiting_time = self.calculate_waiting_time(pile)
                 charging_time = new_amount / pile.power
-                queue_record.estimated_completion_time = datetime.now() + timedelta(hours=waiting_time + charging_time)
+                queue_record.estimated_completion_time = get_china_time() + timedelta(hours=waiting_time + charging_time)
                 
             self.db.commit()
     
