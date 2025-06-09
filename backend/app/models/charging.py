@@ -23,6 +23,7 @@ class QueueStatus(enum.Enum):
     CHARGING = "charging"  # 正在充电
     COMPLETED = "completed"  # 充电完成
     CANCELLED = "cancelled"  # 已取消
+    FAULT_WAITING = "fault_waiting"  # 故障区等待
 
 class ChargingPile(Base):
     """充电桩模型"""

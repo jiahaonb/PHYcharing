@@ -561,6 +561,87 @@
         <el-button @click="vehicleDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 故障队列区域 -->
+    <div class="scene-area fault-area">
+      <div class="area-header">
+        <h3>故障队列</h3>
+        <span class="area-count">{{ faultWaitingVehicles.length }} 单等待重新调度</span>
+      </div>
+      <div class="area-content">
+        <div v-if="faultWaitingVehicles.length === 0" class="empty-area">
+          <el-icon size="48" color="#ccc"><Warning /></el-icon>
+          <span>暂无故障订单</span>
+        </div>
+        <div class="fault-queue-container" v-else>
+          <div class="fault-columns">
+            <!-- 快充故障队列 -->
+            <div class="fault-column fast" v-if="fastFaultVehicles.length > 0">
+              <div class="column-header">
+                <h4>快充故障队列</h4>
+                <span class="column-count">{{ fastFaultVehicles.length }} 单</span>
+              </div>
+              <div class="column-content">
+                <div class="fault-order-list-horizontal">
+                  <div 
+                    v-for="order in fastFaultVehicles" 
+                    :key="`fast-fault-${order.record_number}`"
+                    class="fault-order-item fast"
+                    @click="showFaultOrderDetail(order)"
+                  >
+                    <div class="fault-indicator">
+                      <el-icon><Warning /></el-icon>
+                    </div>
+                    <div class="order-info">
+                      <div class="order-number">{{ order.record_number }}</div>
+                      <div class="order-queue">{{ order.queue_number }}</div>
+                      <div class="order-license">{{ order.license_plate }}</div>
+                    </div>
+                    <div class="fault-time">
+                      <el-tag type="warning" size="small">
+                        {{ formatTime(order.fault_time) }}
+                      </el-tag>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 慢充故障队列 -->
+            <div class="fault-column trickle" v-if="trickleFaultVehicles.length > 0">
+              <div class="column-header">
+                <h4>慢充故障队列</h4>
+                <span class="column-count">{{ trickleFaultVehicles.length }} 单</span>
+              </div>
+              <div class="column-content">
+                <div class="fault-order-list-horizontal">
+                  <div 
+                    v-for="order in trickleFaultVehicles" 
+                    :key="`trickle-fault-${order.record_number}`"
+                    class="fault-order-item trickle"
+                    @click="showFaultOrderDetail(order)"
+                  >
+                    <div class="fault-indicator">
+                      <el-icon><Warning /></el-icon>
+                    </div>
+                    <div class="order-info">
+                      <div class="order-number">{{ order.record_number }}</div>
+                      <div class="order-queue">{{ order.queue_number }}</div>
+                      <div class="order-license">{{ order.license_plate }}</div>
+                    </div>
+                    <div class="fault-time">
+                      <el-tag type="warning" size="small">
+                        {{ formatTime(order.fault_time) }}
+                      </el-tag>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -576,7 +657,8 @@ import {
   Close,
   Clock,
   VideoPause,
-  Setting
+  Setting,
+  Warning
 } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { useAuthStore } from '@/store/auth'
@@ -587,6 +669,7 @@ const autoRefresh = ref(true)
 const vehicles = ref([])
 const chargingPiles = ref([])
 const waitingVehicles = ref({ fast_waiting: [], trickle_waiting: [], total_waiting: 0 })
+const faultVehicles = ref({ fast_fault: [], trickle_fault: [], total_fault: 0 })
 // const queueData = ref([]) // 已删除，不再使用队列数据
 const vehicleDetailVisible = ref(false)
 const selectedVehicle = ref(null)
@@ -708,6 +791,76 @@ const trickleWaitingVehicles = computed(() => {
     }))
   } catch (error) {
     console.error('计算慢充等候车辆时出错:', error)
+    return []
+  }
+})
+
+// 故障等候车辆 - 从专门的故障区API获取
+const faultWaitingVehicles = computed(() => {
+  try {
+    const fastFault = faultVehicles.value.fast_fault || []
+    const trickleFault = faultVehicles.value.trickle_fault || []
+    return [...fastFault, ...trickleFault]
+  } catch (error) {
+    console.error('计算故障等候车辆时出错:', error)
+    return []
+  }
+})
+
+// 快充故障车辆
+const fastFaultVehicles = computed(() => {
+  try {
+    if (!faultVehicles.value || !faultVehicles.value.fast_fault) {
+      return []
+    }
+    
+    return faultVehicles.value.fast_fault.map(order => ({
+      record_number: order.record_number,
+      queue_number: order.queue_number,
+      license_plate: order.license_plate,
+      user_name: order.user_name,
+      charging_amount: order.charging_amount,
+      charging_mode: order.charging_mode,
+      fault_time: order.fault_time,
+      status: order.status,
+      electricity_fee: order.electricity_fee,
+      service_fee: order.service_fee,
+      total_fee: order.total_fee,
+      created_at: order.created_at,
+      vehicle_id: order.vehicle_id,
+      user_id: order.user_id
+    }))
+  } catch (error) {
+    console.error('计算快充故障车辆时出错:', error)
+    return []
+  }
+})
+
+// 慢充故障车辆
+const trickleFaultVehicles = computed(() => {
+  try {
+    if (!faultVehicles.value || !faultVehicles.value.trickle_fault) {
+      return []
+    }
+    
+    return faultVehicles.value.trickle_fault.map(order => ({
+      record_number: order.record_number,
+      queue_number: order.queue_number,
+      license_plate: order.license_plate,
+      user_name: order.user_name,
+      charging_amount: order.charging_amount,
+      charging_mode: order.charging_mode,
+      fault_time: order.fault_time,
+      status: order.status,
+      electricity_fee: order.electricity_fee,
+      service_fee: order.service_fee,
+      total_fee: order.total_fee,
+      created_at: order.created_at,
+      vehicle_id: order.vehicle_id,
+      user_id: order.user_id
+    }))
+  } catch (error) {
+    console.error('计算慢充故障车辆时出错:', error)
     return []
   }
 })
@@ -895,14 +1048,15 @@ const fetchAllData = async () => {
     ])
     
     // 然后并行获取其他数据
-    const [vehiclesResult, pilesResult, waitingResult] = await Promise.allSettled([
+    const [vehiclesResult, pilesResult, waitingResult, faultResult] = await Promise.allSettled([
       fetchVehicles(),
       fetchChargingPiles(),
-      fetchWaitingVehicles()
+      fetchWaitingVehicles(),
+      fetchFaultVehicles()
     ])
     
     // 检查是否有失败的请求
-    const allResults = [...configResult, vehiclesResult, pilesResult, waitingResult]
+    const allResults = [...configResult, vehiclesResult, pilesResult, waitingResult, faultResult]
     const failedRequests = allResults.filter(result => result.status === 'rejected')
     
     if (failedRequests.length > 0) {
@@ -986,6 +1140,22 @@ const fetchWaitingVehicles = async () => {
   } catch (error) {
     console.error('获取等候区数据失败:', error)
     waitingVehicles.value = { fast_waiting: [], trickle_waiting: [], total_waiting: 0 }
+    throw error
+  }
+}
+
+const fetchFaultVehicles = async () => {
+  try {
+    const response = await api.get('/admin/scene/fault-vehicles')
+    faultVehicles.value = response || { fast_fault: [], trickle_fault: [], total_fault: 0 }
+    console.log('✅ 获取故障区数据成功:', {
+      快充故障: faultVehicles.value.fast_fault.length,
+      慢充故障: faultVehicles.value.trickle_fault.length,
+      总计故障: faultVehicles.value.total_fault
+    })
+  } catch (error) {
+    console.error('获取故障区数据失败:', error)
+    faultVehicles.value = { fast_fault: [], trickle_fault: [], total_fault: 0 }
     throw error
   }
 }
@@ -1144,6 +1314,77 @@ const showWaitingVehicleDetail = async (vehicle) => {
   } catch (error) {
     console.error('显示等候区车辆详情失败:', error.message || error)
     ElMessage.error('显示车辆详情失败')
+  }
+}
+
+// 显示故障区订单详情
+const showFaultOrderDetail = async (order) => {
+  try {
+    console.log('🔍 显示故障区订单详情:', order.record_number)
+    
+    // 根据订单数据获取完整的订单和车辆信息
+    try {
+      const response = await api.get(`/admin/charging-record/${order.record_number}`)
+      
+      // 构建车辆信息
+      selectedVehicle.value = {
+        id: order.vehicle_id,
+        license_plate: order.license_plate,
+        model: response.vehicle?.model || '未知型号',
+        battery_capacity: response.vehicle?.battery_capacity || 0,
+        status: '故障等待',
+        owner: response.vehicle?.owner || null
+      }
+      
+      // 设置订单信息
+      selectedVehicleOrder.value = {
+        record_number: order.record_number,
+        queue_number: order.queue_number,
+        license_plate: order.license_plate,
+        charging_amount: order.charging_amount,
+        charging_mode: order.charging_mode,
+        electricity_fee: order.electricity_fee,
+        service_fee: order.service_fee,
+        total_fee: order.total_fee,
+        status: order.status,
+        created_at: order.created_at,
+        fault_time: order.fault_time
+      }
+      
+      vehicleDetailVisible.value = true
+      
+      console.log('✅ 获取到故障订单详情:', {
+        订单编号: order.record_number,
+        车牌号: order.license_plate,
+        状态: order.status
+      })
+      
+    } catch (error) {
+      console.error('获取故障订单详情失败:', error.message || error)
+      
+      // 如果无法获取完整详情，使用已有数据显示
+      selectedVehicle.value = {
+        license_plate: order.license_plate,
+        status: '故障等待',
+        user_name: order.user_name
+      }
+      
+      selectedVehicleOrder.value = {
+        record_number: order.record_number,
+        queue_number: order.queue_number,
+        license_plate: order.license_plate,
+        charging_amount: order.charging_amount,
+        charging_mode: order.charging_mode,
+        status: order.status,
+        fault_time: order.fault_time
+      }
+      
+      vehicleDetailVisible.value = true
+    }
+    
+  } catch (error) {
+    console.error('显示故障区订单详情失败:', error.message || error)
+    ElMessage.error('显示订单详情失败')
   }
 }
 
@@ -2512,6 +2753,147 @@ onUnmounted(() => {
   margin-bottom: 15px;
 }
 
+/* 故障队列区样式 */
+.fault-area {
+  border-left: 4px solid #F56C6C;
+}
+
+.fault-area .area-header {
+  border-left-color: #F56C6C;
+}
+
+.fault-queue-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  height: 100%;
+}
+
+.fault-column {
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.fault-column.fast {
+  border-left: 3px solid #F56C6C;
+}
+
+.fault-column.trickle {
+  border-left: 3px solid #F56C6C;
+}
+
+/* 故障订单横向列表 */
+.fault-order-list-horizontal {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #c1c1c1 #f1f1f1;
+}
+
+.fault-order-list-horizontal::-webkit-scrollbar {
+  height: 6px;
+}
+
+.fault-order-list-horizontal::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.fault-order-list-horizontal::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.fault-order-list-horizontal::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.fault-order-item {
+  border: 1px solid #F56C6C;
+  background: linear-gradient(135deg, #fef0f0 0%, #fdf2ec 100%);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 120px;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+
+.fault-order-item:hover {
+  background: linear-gradient(135deg, #fed7d7 0%, #fde2cc 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 108, 108, 0.3);
+}
+
+.fault-order-item .fault-indicator {
+  color: #F56C6C;
+  font-size: 16px;
+  animation: faultBlink 2s infinite;
+}
+
+@keyframes faultBlink {
+  0%, 50% { opacity: 1; }
+  25%, 75% { opacity: 0.3; }
+}
+
+.fault-order-item .order-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.fault-order-item .order-number {
+  font-weight: 600;
+  font-size: 12px;
+  color: #F56C6C;
+  background: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #F56C6C;
+}
+
+.fault-order-item .order-queue {
+  background: #F56C6C;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.fault-order-item .order-license {
+  font-weight: 600;
+  font-size: 11px;
+  color: #333;
+}
+
+.fault-order-item .fault-time {
+  margin-top: 4px;
+}
+
+.fault-area .empty-column {
+  background: #fefefe;
+  color: #F56C6C;
+  border: 1px dashed #F56C6C;
+  border-radius: 6px;
+  margin: 10px;
+  height: calc(100% - 20px);
+}
+
 /* 响应式设计 */
 @media (max-width: 1200px) {
   .scene-main {
@@ -2525,6 +2907,11 @@ onUnmounted(() => {
   
   .pile-spots {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .fault-queue-container {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 }
 

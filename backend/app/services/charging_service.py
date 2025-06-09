@@ -127,22 +127,34 @@ class ChargingScheduleService:
         """阶段1: 将等候区车辆调度到充电区排队"""
         print(f"📋 调度{charging_mode.value}充电等候区车辆到充电区排队...")
         
-        # 获取等候区的车辆（按FCFS排序）
+        # 优先获取故障区的车辆，然后是等候区的车辆
+        fault_vehicles = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_mode == charging_mode,
+            ChargingQueue.status == QueueStatus.FAULT_WAITING
+        ).order_by(ChargingQueue.queue_time).all()
+        
         waiting_vehicles = self.db.query(ChargingQueue).filter(
             ChargingQueue.charging_mode == charging_mode,
             ChargingQueue.status == QueueStatus.WAITING
         ).order_by(ChargingQueue.queue_time).all()
         
-        print(f"  等候区车辆数: {len(waiting_vehicles)}")
+        # 合并车辆列表，故障车辆优先
+        all_vehicles = fault_vehicles + waiting_vehicles
         
-        if not waiting_vehicles:
-            print(f"  等候区无{charging_mode.value}充电车辆")
+        print(f"  故障区车辆数: {len(fault_vehicles)}")
+        print(f"  等候区车辆数: {len(waiting_vehicles)}")
+        print(f"  总待调度车辆数: {len(all_vehicles)}")
+        
+        if not all_vehicles:
+            print(f"  无{charging_mode.value}充电车辆需要调度")
             return
         
-        # 获取该模式的所有充电桩
+        # 获取该模式的所有充电桩，排除故障状态的充电桩
+        from app.models import ChargingPileStatus
         available_piles = self.db.query(ChargingPile).filter(
             ChargingPile.charging_mode == charging_mode,
-            ChargingPile.is_active == True
+            ChargingPile.is_active == True,
+            ChargingPile.status != ChargingPileStatus.FAULT  # 跳过故障充电桩
         ).order_by(ChargingPile.pile_number).all()  # 按桩号排序
         
         print(f"  检查所有{charging_mode.value}充电桩: {[p.pile_number for p in available_piles]}")
@@ -163,8 +175,8 @@ class ChargingScheduleService:
             # print(f"  ⏳ 所有{charging_mode.value}充电桩排队区已满，等候区车辆继续等待")
             return
         
-        # 为每个等候车辆寻找总耗时最短的充电桩
-        for vehicle in waiting_vehicles:
+        # 为每个车辆寻找总耗时最短的充电桩（故障车辆优先）
+        for vehicle in all_vehicles:
             assigned = False
             
             # 找到总耗时最短的充电桩
@@ -197,7 +209,8 @@ class ChargingScheduleService:
             if best_pile:
                 self._assign_to_charging_queue(vehicle, best_pile)
                 assigned = True
-                print(f"  ✅ 车辆 {vehicle.queue_number} 从等候区分配到充电桩 {best_pile.pile_number} (总耗时: {min_total_time:.1f}小时)")
+                vehicle_type = "故障区" if vehicle.status == QueueStatus.FAULT_WAITING else "等候区"
+                print(f"  ✅ 车辆 {vehicle.queue_number} 从{vehicle_type}分配到充电桩 {best_pile.pile_number} (总耗时: {min_total_time:.1f}小时)")
             
             # 如果没有可用的排队位，等候车辆继续等待
             if not assigned:
@@ -245,10 +258,12 @@ class ChargingScheduleService:
         """阶段2: 将充电区排队车辆调度到充电位"""
         print(f"⚡ 调度{charging_mode.value}充电区排队车辆到充电位...")
         
-        # 获取该模式的所有充电桩
+        # 获取该模式的所有充电桩，排除故障状态的充电桩
+        from app.models import ChargingPileStatus
         all_piles = self.db.query(ChargingPile).filter(
             ChargingPile.charging_mode == charging_mode,
-            ChargingPile.is_active == True
+            ChargingPile.is_active == True,
+            ChargingPile.status != ChargingPileStatus.FAULT  # 跳过故障充电桩
         ).all()
         
         for pile in all_piles:
@@ -287,8 +302,14 @@ class ChargingScheduleService:
         
         if charging_record:
             charging_record.charging_pile_id = pile.id
-            charging_record.status = "assigned"  # 已分配充电桩，在排队区等待
-            print(f"📋 订单 {charging_record.record_number} 从等候区分配到充电桩 {pile.pile_number} 排队区")
+            
+            # 如果是从故障区恢复，需要特殊处理
+            if charging_record.status == "suspended":
+                charging_record.status = "assigned"  # 从暂停中恢复为已分配
+                print(f"📋 故障订单 {charging_record.record_number} 恢复并分配到充电桩 {pile.pile_number} 排队区")
+            else:
+                charging_record.status = "assigned"  # 已分配充电桩，在排队区等待
+                print(f"📋 订单 {charging_record.record_number} 从等候区分配到充电桩 {pile.pile_number} 排队区")
         
         self.db.commit()
     
@@ -298,7 +319,10 @@ class ChargingScheduleService:
         best_pile = None
         min_completion_time = float('inf')
         
-        matching_piles = [p for p in available_piles if p.charging_mode == queue_record.charging_mode]
+        from app.models import ChargingPileStatus
+        matching_piles = [p for p in available_piles 
+                         if p.charging_mode == queue_record.charging_mode 
+                         and p.status != ChargingPileStatus.FAULT]  # 跳过故障充电桩
         
         for pile in matching_piles:
             # 计算该充电桩的总等待时间
@@ -501,17 +525,33 @@ class ChargingScheduleService:
         # 时间 (6位数)
         time_str = now.strftime("%H%M%S")
         
-        # 获取今天的记录数量作为序号
+        # 获取今天的记录数量作为序号，避免重复
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_count = self.db.query(ChargingRecord).filter(
-            ChargingRecord.created_at >= today_start
-        ).count()
         
-        # 四位序号，从0001开始
-        sequence = f"{today_count + 1:04d}"
+        # 循环生成，直到找到唯一的编号
+        max_attempts = 100
+        for attempt in range(max_attempts):
+            today_count = self.db.query(ChargingRecord).filter(
+                ChargingRecord.created_at >= today_start
+            ).count()
+            
+            # 四位序号，从0001开始，加上尝试次数避免冲突
+            sequence = f"{today_count + 1 + attempt:04d}"
+            
+            # 组合订单编号：充电模式 + 日期8位 + 时间6位 + 序号4位
+            record_number = f"{mode_prefix}{date_str}{time_str}{sequence}"
+            
+            # 检查是否已存在
+            existing = self.db.query(ChargingRecord).filter(
+                ChargingRecord.record_number == record_number
+            ).first()
+            
+            if not existing:
+                return record_number
         
-        # 组合订单编号：充电模式 + 日期8位 + 时间6位 + 序号4位
-        return f"{mode_prefix}{date_str}{time_str}{sequence}"
+        # 如果所有尝试都失败，使用微秒时间戳确保唯一性
+        microsecond_str = now.strftime("%f")[:3]  # 取前3位微秒
+        return f"{mode_prefix}{date_str}{time_str}{microsecond_str}"
     
     def _create_charging_order(self, user_id: int, vehicle_id: int, queue_number: str, 
                               license_plate: str, charging_mode: ChargingMode, 
@@ -650,60 +690,239 @@ class ChargingScheduleService:
         if not pile:
             raise Exception("充电桩不存在")
         
+        print(f"🚨 处理充电桩 {pile.pile_number} 故障，调度策略: {recovery_strategy}")
+        
+        # 设置充电桩为故障状态
         pile.status = ChargingPileStatus.FAULT
         
-        # 停止当前充电车辆的计费
-        charging_vehicle = self.db.query(ChargingQueue).filter(
+        # 获取当前在该充电桩充电的车辆
+        charging_vehicles = self.db.query(ChargingQueue).filter(
             ChargingQueue.charging_pile_id == pile_id,
             ChargingQueue.status == QueueStatus.CHARGING
-        ).first()
+        ).all()
         
-        if charging_vehicle:
-            self.complete_charging(charging_vehicle.id)
-        
-        # 处理故障队列中的车辆
-        fault_queue_vehicles = self.db.query(ChargingQueue).filter(
+        # 获取在该充电桩排队的车辆
+        queuing_vehicles = self.db.query(ChargingQueue).filter(
             ChargingQueue.charging_pile_id == pile_id,
             ChargingQueue.status == QueueStatus.QUEUING
         ).all()
         
+        # 所有受影响的车辆
+        fault_vehicles = charging_vehicles + queuing_vehicles
+        
+        print(f"  受影响车辆数量: {len(fault_vehicles)}")
+        for vehicle in fault_vehicles:
+            print(f"    - {vehicle.queue_number} (状态: {vehicle.status.value})")
+        
+        # 处理所有受影响的车辆：将状态改为故障等候，详单状态改为暂停中
+        for vehicle in fault_vehicles:
+            print(f"  将车辆 {vehicle.queue_number} 移入故障区（暂停状态）")
+            
+            # 将队列状态改为故障等候
+            vehicle.status = QueueStatus.FAULT_WAITING
+            vehicle.charging_pile_id = None  # 清除充电桩分配
+            
+            # 将对应的充电记录状态改为暂停中
+            charging_record = self.db.query(ChargingRecord).filter(
+                ChargingRecord.queue_number == vehicle.queue_number
+            ).first()
+            
+            if charging_record:
+                if vehicle in charging_vehicles:
+                    # 正在充电的车辆，记录当前进度但不完成计费
+                    charging_record.status = "suspended"  # 暂停中
+                    print(f"    充电详单 {charging_record.record_number} 状态设为暂停中")
+                else:
+                    # 排队中的车辆，直接设为暂停
+                    charging_record.status = "suspended"  # 暂停中
+                    print(f"    排队详单 {charging_record.record_number} 状态设为暂停中")
+        
+        fault_queue_vehicles = fault_vehicles
+        
+        # 根据调度策略进行调度
         if recovery_strategy == "priority":
-            self.priority_reschedule(fault_queue_vehicles, pile.charging_mode)
+            self._fault_priority_reschedule(fault_queue_vehicles, pile.charging_mode)
+        elif recovery_strategy == "time_order":
+            self._fault_time_order_reschedule(fault_queue_vehicles, pile.charging_mode)
         else:
-            self.time_order_reschedule(fault_queue_vehicles, pile.charging_mode)
+            # 默认使用优先调度
+            self._fault_priority_reschedule(fault_queue_vehicles, pile.charging_mode)
         
         self.db.commit()
+        print(f"✅ 充电桩 {pile.pile_number} 故障处理完成")
     
-    def priority_reschedule(self, fault_vehicles: List[ChargingQueue], charging_mode: ChargingMode):
-        """优先级调度"""
-        # 将故障队列车辆重新分配到其他同类型充电桩
-        for vehicle in fault_vehicles:
-            vehicle.charging_pile_id = None
-            vehicle.status = QueueStatus.WAITING
+    def _fault_priority_reschedule(self, fault_vehicles: List[ChargingQueue], charging_mode: ChargingMode):
+        """故障优先调度 - 原则1：优先调度"""
+        print(f"  执行故障优先调度策略 (受影响车辆: {len(fault_vehicles)})")
         
-        # 重新调度
-        self.schedule_charging()
-    
-    def time_order_reschedule(self, fault_vehicles: List[ChargingQueue], charging_mode: ChargingMode):
-        """时间顺序调度"""
-        # 获取其他同类型充电桩的排队车辆
-        other_queued_vehicles = self.db.query(ChargingQueue).filter(
-            ChargingQueue.charging_mode == charging_mode,
-            ChargingQueue.status == QueueStatus.QUEUING,
-            ChargingQueue.charging_pile_id != fault_vehicles[0].charging_pile_id if fault_vehicles else None
+        if not fault_vehicles:
+            return
+        
+        # 暂停等候区叫号服务（通过特殊标记）
+        self._pause_waiting_area_service(charging_mode, "fault_priority")
+        
+        # 为故障车辆优先分配到其他同类型充电桩
+        available_piles = self.db.query(ChargingPile).filter(
+            ChargingPile.charging_mode == charging_mode,
+            ChargingPile.is_active == True,
+            ChargingPile.status != ChargingPileStatus.FAULT
         ).all()
         
-        # 合并所有车辆并按排队号码排序
-        all_vehicles = fault_vehicles + other_queued_vehicles
-        all_vehicles.sort(key=lambda x: x.queue_number)
+        print(f"  可用的同类型充电桩: {[p.pile_number for p in available_piles]}")
         
-        # 清空所有车辆的充电桩分配
-        for vehicle in all_vehicles:
+        # 为每个故障车辆寻找最优充电桩
+        assigned_count = 0
+        for vehicle in fault_vehicles:
+            best_pile = None
+            min_total_time = float('inf')
+            
+            for pile in available_piles:
+                # 检查充电桩排队区是否有空位
+                current_queue_count = self.db.query(ChargingQueue).filter(
+                    ChargingQueue.charging_pile_id == pile.id,
+                    ChargingQueue.status == QueueStatus.QUEUING
+                ).count()
+                
+                if current_queue_count < settings.CHARGING_QUEUE_LEN:
+                    # 计算总耗时
+                    total_time = self._calculate_total_completion_time(pile, vehicle)
+                    if total_time < min_total_time:
+                        min_total_time = total_time
+                        best_pile = pile
+            
+            # 如果找到可用充电桩，直接分配
+            if best_pile:
+                # 改变车辆状态为排队
+                vehicle.status = QueueStatus.QUEUING
+                self._assign_to_charging_queue(vehicle, best_pile)
+                assigned_count += 1
+                print(f"    故障车辆 {vehicle.queue_number} 优先分配到充电桩 {best_pile.pile_number}")
+                
+                # 恢复对应的充电记录状态
+                charging_record = self.db.query(ChargingRecord).filter(
+                    ChargingRecord.queue_number == vehicle.queue_number
+                ).first()
+                if charging_record and charging_record.status == "suspended":
+                    charging_record.status = "created"  # 恢复为等待充电状态
+                    print(f"      恢复详单 {charging_record.record_number} 状态为等待充电")
+        
+        # 如果还有故障车辆未分配，保持故障区状态等待下次调度
+        remaining_fault_vehicles = len(fault_vehicles) - assigned_count
+        if remaining_fault_vehicles > 0:
+            print(f"    还有 {remaining_fault_vehicles} 个故障车辆暂时无法分配，保持故障区状态")
+        
+        # 等故障队列全部调度完毕后，重新开启等候区叫号服务
+        self._resume_waiting_area_service(charging_mode)
+        print(f"  故障优先调度完成，重新开启等候区叫号服务")
+    
+    def _fault_time_order_reschedule(self, fault_vehicles: List[ChargingQueue], charging_mode: ChargingMode):
+        """故障时间顺序调度 - 原则2：时间顺序调度"""
+        print(f"  执行故障时间顺序调度策略 (受影响车辆: {len(fault_vehicles)})")
+        
+        if not fault_vehicles:
+            return
+        
+        # 暂停等候区叫号服务
+        self._pause_waiting_area_service(charging_mode, "fault_time_order")
+        
+        # 获取其他同类型充电桩中尚未充电的车辆（充电区排队的车辆）
+        other_queued_vehicles = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_mode == charging_mode,
+            ChargingQueue.status == QueueStatus.QUEUING
+        ).all()
+        
+        print(f"  其他充电桩排队车辆: {[v.queue_number for v in other_queued_vehicles]}")
+        
+        # 将其他充电桩的排队车辆状态改为等候
+        for vehicle in other_queued_vehicles:
             vehicle.charging_pile_id = None
             vehicle.status = QueueStatus.WAITING
+            print(f"    将车辆 {vehicle.queue_number} 移回等候区")
         
-        # 重新调度
-        self.schedule_charging()
+        # 合并故障车辆和其他排队车辆，按排队号码排序
+        all_vehicles = fault_vehicles + other_queued_vehicles
+        
+        # 按排队号码排序（提取数字部分进行比较）
+        def extract_queue_number(queue_number):
+            try:
+                return int(queue_number[1:])  # 去掉前缀字母
+            except:
+                return 0
+        
+        all_vehicles.sort(key=lambda x: extract_queue_number(x.queue_number))
+        
+        print(f"  按排队号码重新排序: {[v.queue_number for v in all_vehicles]}")
+        
+        # 重新调度所有车辆
+        self._schedule_waiting_to_charging_queue(charging_mode)
+        
+        # 调度完毕后，重新开启等候区叫号服务
+        self._resume_waiting_area_service(charging_mode)
+        print(f"  时间顺序调度完成，重新开启等候区叫号服务")
+    
+    def handle_pile_recovery(self, pile_id: int):
+        """处理充电桩故障恢复 - 原则3：故障恢复调度"""
+        pile = self.db.query(ChargingPile).filter(
+            ChargingPile.id == pile_id
+        ).first()
+        
+        if not pile:
+            raise Exception("充电桩不存在")
+        
+        print(f"🔧 处理充电桩 {pile.pile_number} 故障恢复")
+        
+        # 恢复充电桩状态
+        pile.status = ChargingPileStatus.NORMAL
+        
+        # 检查其他同类型充电桩是否还有车辆排队
+        other_queued_vehicles = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_mode == pile.charging_mode,
+            ChargingQueue.status == QueueStatus.QUEUING
+        ).all()
+        
+        if other_queued_vehicles:
+            print(f"  发现其他充电桩还有 {len(other_queued_vehicles)} 个车辆排队，开始重新调度")
+            
+            # 暂停等候区叫号服务
+            self._pause_waiting_area_service(pile.charging_mode, "recovery")
+            
+            # 将其他充电桩的排队车辆移回等候区
+            for vehicle in other_queued_vehicles:
+                vehicle.charging_pile_id = None
+                vehicle.status = QueueStatus.WAITING
+                print(f"    将车辆 {vehicle.queue_number} 移回等候区重新调度")
+            
+            # 按排队号码重新调度
+            self._schedule_waiting_to_charging_queue(pile.charging_mode)
+            
+            # 调度完毕后，重新开启等候区叫号服务
+            self._resume_waiting_area_service(pile.charging_mode)
+            print(f"  故障恢复调度完成，重新开启等候区叫号服务")
+        else:
+            print(f"  其他充电桩无排队车辆，直接恢复正常调度")
+        
+        self.db.commit()
+        print(f"✅ 充电桩 {pile.pile_number} 故障恢复处理完成")
+    
+    def _pause_waiting_area_service(self, charging_mode: ChargingMode, reason: str):
+        """暂停等候区叫号服务"""
+        # 这里可以设置一个标记，暂停等候区的自动调度
+        # 在实际实现中，可以通过配置或状态标记来控制
+        print(f"    暂停{charging_mode.value}充电等候区叫号服务 (原因: {reason})")
+    
+    def _resume_waiting_area_service(self, charging_mode: ChargingMode):
+        """恢复等候区叫号服务"""
+        print(f"    恢复{charging_mode.value}充电等候区叫号服务")
+        # 重新调度等候区车辆
+        self._schedule_waiting_to_charging_queue(charging_mode)
+    
+    def priority_reschedule(self, fault_vehicles: List[ChargingQueue], charging_mode: ChargingMode):
+        """优先级调度（兼容旧接口）"""
+        self._fault_priority_reschedule(fault_vehicles, charging_mode)
+    
+    def time_order_reschedule(self, fault_vehicles: List[ChargingQueue], charging_mode: ChargingMode):
+        """时间顺序调度（兼容旧接口）"""
+        self._fault_time_order_reschedule(fault_vehicles, charging_mode)
     
     def restore_pile_status(self):
         """手动恢复充电桩状态（用于调试或紧急修复）"""

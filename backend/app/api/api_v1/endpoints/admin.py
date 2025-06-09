@@ -385,14 +385,34 @@ def get_queue_summary(
 @router.post("/piles/{pile_id}/fault", summary="设置充电桩故障")
 def set_pile_fault(
     pile_id: int,
+    strategy: str = "priority",  # 可选：priority, time_order
     admin_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db)
 ):
-    """设置充电桩故障状态"""
+    """设置充电桩故障状态
+    
+    Args:
+        pile_id: 充电桩ID
+        strategy: 调度策略 (priority: 优先调度, time_order: 时间顺序调度)
+    """
     service = ChargingScheduleService(db)
     try:
-        service.handle_pile_fault(pile_id, "priority")
-        return {"message": "充电桩故障处理完成"}
+        service.handle_pile_fault(pile_id, strategy)
+        return {"message": f"充电桩故障处理完成，使用{strategy}调度策略"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/piles/{pile_id}/recovery", summary="充电桩故障恢复")
+def recover_pile_fault(
+    pile_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """恢复充电桩故障状态"""
+    service = ChargingScheduleService(db)
+    try:
+        service.handle_pile_recovery(pile_id)
+        return {"message": "充电桩故障恢复处理完成"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1768,6 +1788,82 @@ def get_waiting_vehicles(
             "fast_waiting": [],
             "trickle_waiting": [],
             "total_waiting": 0
+        }
+
+@router.get("/scene/fault-vehicles", summary="获取故障区详单")
+def get_fault_vehicles(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """获取故障区详单数据（状态为FAULT_WAITING）"""
+    try:
+        from sqlalchemy.orm import joinedload
+        
+        # 查询故障区的队列记录
+        fault_queues = db.query(ChargingQueue).options(
+            joinedload(ChargingQueue.vehicle),
+            joinedload(ChargingQueue.user)
+        ).filter(
+            ChargingQueue.status == QueueStatus.FAULT_WAITING
+        ).order_by(ChargingQueue.queue_time).all()
+        
+        # 按充电模式分组
+        fast_fault = []
+        trickle_fault = []
+        
+        for queue in fault_queues:
+            try:
+                # 获取对应的充电详单
+                charging_record = db.query(ChargingRecord).filter(
+                    ChargingRecord.queue_number == queue.queue_number
+                ).first()
+                
+                if not charging_record:
+                    continue
+                
+                # 获取车辆和用户信息
+                vehicle_license = queue.vehicle.license_plate if queue.vehicle else "未知车辆"
+                user_name = queue.user.username if queue.user else "未知用户"
+                
+                # 构建详单数据
+                order_data = {
+                    "record_number": charging_record.record_number,
+                    "queue_number": queue.queue_number,
+                    "license_plate": vehicle_license,
+                    "user_name": user_name,
+                    "charging_amount": charging_record.charging_amount,
+                    "charging_mode": queue.charging_mode.value,
+                    "fault_time": queue.updated_at or queue.queue_time,
+                    "status": charging_record.status,
+                    "electricity_fee": charging_record.electricity_fee,
+                    "service_fee": charging_record.service_fee,
+                    "total_fee": charging_record.total_fee,
+                    "created_at": charging_record.created_at,
+                    "vehicle_id": queue.vehicle_id,
+                    "user_id": queue.user_id
+                }
+                
+                if queue.charging_mode == ChargingMode.FAST:
+                    fast_fault.append(order_data)
+                else:
+                    trickle_fault.append(order_data)
+                    
+            except Exception as e:
+                print(f"处理故障队列 {queue.id} 时出错: {e}")
+                continue
+        
+        return {
+            "fast_fault": fast_fault,
+            "trickle_fault": trickle_fault,
+            "total_fault": len(fast_fault) + len(trickle_fault)
+        }
+        
+    except Exception as e:
+        print(f"获取故障区详单失败: {e}")
+        return {
+            "fast_fault": [],
+            "trickle_fault": [],
+            "total_fault": 0
         }
 
 @router.get("/orders", summary="获取所有订单")
