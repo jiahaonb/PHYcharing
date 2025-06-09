@@ -224,6 +224,11 @@ def get_charging_records(
                 "service_fee": format_currency(record.service_fee),
                 "total_fee": format_currency(record.total_fee),
                 "unit_price": format_currency(record.unit_price),
+                # 添加实际费用信息
+                "actual_charging_amount": record.actual_charging_amount,
+                "actual_electricity_fee": format_currency(record.actual_electricity_fee) if record.actual_electricity_fee else None,
+                "actual_service_fee": format_currency(record.actual_service_fee) if record.actual_service_fee else None,
+                "actual_total_fee": format_currency(record.actual_total_fee) if record.actual_total_fee else None,
                 "time_period": record.time_period,
                 "charging_mode": record.charging_mode.value if hasattr(record.charging_mode, 'value') else str(record.charging_mode),
                 "status": record.status,
@@ -269,6 +274,11 @@ def get_charging_record(
         "service_fee": format_currency(record.service_fee),
         "total_fee": format_currency(record.total_fee),
         "unit_price": format_currency(record.unit_price),
+        # 添加实际费用信息
+        "actual_charging_amount": record.actual_charging_amount,
+        "actual_electricity_fee": format_currency(record.actual_electricity_fee) if record.actual_electricity_fee else None,
+        "actual_service_fee": format_currency(record.actual_service_fee) if record.actual_service_fee else None,
+        "actual_total_fee": format_currency(record.actual_total_fee) if record.actual_total_fee else None,
         "time_period": record.time_period,
         "charging_mode": record.charging_mode.value if hasattr(record.charging_mode, 'value') else str(record.charging_mode),
         "status": record.status,

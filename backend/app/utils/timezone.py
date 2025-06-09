@@ -49,11 +49,15 @@ def format_china_time(dt: Optional[datetime]) -> str:
     if dt is None:
         return ""
     
-    # 转换为中国时间
-    china_dt = utc_to_china_time(dt)
+    # 如果没有时区信息，假设它已经是中国时间（从数据库读取的时间）
+    if dt.tzinfo is None:
+        china_dt = dt
+    else:
+        # 如果有时区信息，转换为中国时间
+        china_dt = dt.astimezone(CHINA_TZ).replace(tzinfo=None)
     
     # 格式化为字符串，去掉时区信息（前端会当作本地时间处理）
-    return china_dt.replace(tzinfo=None).isoformat()
+    return china_dt.isoformat()
 
 def now_china_string() -> str:
     """
@@ -68,4 +72,23 @@ def format_currency(amount: Optional[float]) -> Optional[float]:
     """
     if amount is None:
         return None
-    return round(float(amount), 2) 
+    return round(float(amount), 2)
+
+def format_utc_time(dt: Optional[datetime]) -> str:
+    """
+    将UTC时间（通常来自数据库的created_at字段）格式化为中国时间字符串
+    """
+    if dt is None:
+        return ""
+    
+    # 如果没有时区信息，假设它是UTC时间（数据库的func.now()）
+    if dt.tzinfo is None:
+        utc_dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        utc_dt = dt
+    
+    # 转换为中国时间
+    china_dt = utc_dt.astimezone(CHINA_TZ).replace(tzinfo=None)
+    
+    # 格式化为字符串
+    return china_dt.isoformat() 

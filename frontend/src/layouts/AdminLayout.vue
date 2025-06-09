@@ -29,11 +29,6 @@
             <span>充电桩管理</span>
           </el-menu-item>
           
-          <el-menu-item index="/admin/monitoring">
-            <el-icon><View /></el-icon>
-            <span>实时监控</span>
-          </el-menu-item>
-          
           <el-menu-item index="/admin/queue-monitoring">
             <el-icon><Connection /></el-icon>
             <span>队列监控</span>
@@ -57,6 +52,11 @@
           <el-menu-item index="/admin/users">
             <el-icon><UserFilled /></el-icon>
             <span>用户管理</span>
+          </el-menu-item>
+          
+          <el-menu-item index="/admin/orders">
+            <el-icon><Document /></el-icon>
+            <span>订单管理</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -111,14 +111,14 @@ import {
   Lightning, 
   Monitor, 
   Connection, 
-  View, 
   DataAnalysis, 
   User, 
   ArrowDown,
   Van,
   VideoPlay,
   Setting,
-  UserFilled 
+  UserFilled,
+  Document
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -132,13 +132,13 @@ const getPageTitle = () => {
   const routeMap = {
     '/admin/dashboard': '仪表板',
     '/admin/piles': '充电桩管理',
-    '/admin/monitoring': '实时监控',
     '/admin/queue-monitoring': '队列监控',
     '/admin/charging-scene': '充电场景动画',
     '/admin/reports': '数据报表',
     '/admin/vehicles': '车辆管理',
     '/admin/config': '系统配置',
-    '/admin/users': '用户管理'
+    '/admin/users': '用户管理',
+    '/admin/orders': '订单管理'
   }
   return routeMap[router.currentRoute.value.path] || '管理后台'
 }

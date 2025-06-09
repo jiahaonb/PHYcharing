@@ -3,32 +3,32 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>³äµçÏû·ÑÍ³¼Æ</span>
+          <span>ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í³ï¿½ï¿½</span>
           <div>
-            <el-select v-model="selectedYear" placeholder="Ñ¡ÔñÄê·Ý" style="width: 120px; margin-right: 10px">
-              <el-option v-for="year in availableYears" :key="year" :label="year + 'Äê'" :value="year" />
+            <el-select v-model="selectedYear" placeholder="Ñ¡ï¿½ï¿½ï¿½ï¿½ï¿½" style="width: 120px; margin-right: 10px">
+              <el-option v-for="year in availableYears" :key="year" :label="year + 'ï¿½ï¿½'" :value="year" />
             </el-select>
           </div>
         </div>
       </template>
       
       <div v-loading="loading">
-        <!-- Ïû·ÑÍ¼±í -->
+        <!-- ï¿½ï¿½ï¿½ï¿½Í¼ï¿½ï¿½ -->
         <div class="chart-container">
           <v-chart class="chart" :option="chartOption" autoresize />
         </div>
         
-        <!-- Í³¼Æ¿¨Æ¬ -->
+        <!-- Í³ï¿½Æ¿ï¿½Æ¬ -->
         <el-row :gutter="20" class="statistics-cards">
           <el-col :span="6">
             <el-card shadow="hover" class="stat-card">
               <template #header>
                 <div class="card-header-small">
-                  <span>×Ü³äµç´ÎÊý</span>
+                  <span>ï¿½Ü³ï¿½ï¿½ï¿½ï¿½ï¿½</span>
                 </div>
               </template>
               <div class="stat-value">{{ statistics.totalCount || 0 }}</div>
-              <div class="stat-desc">±¾Äê¶È³äµç×Ü´ÎÊý</div>
+              <div class="stat-desc">ï¿½ï¿½ï¿½ï¿½È³ï¿½ï¿½ï¿½Ü´ï¿½ï¿½ï¿½</div>
             </el-card>
           </el-col>
           
@@ -36,11 +36,11 @@
             <el-card shadow="hover" class="stat-card">
               <template #header>
                 <div class="card-header-small">
-                  <span>×Ü³äµçÁ¿</span>
+                  <span>ï¿½Ü³ï¿½ï¿½ï¿½ï¿½</span>
                 </div>
               </template>
-              <div class="stat-value">{{ formatNumber(statistics.totalEnergy) || 0 }} <span class="stat-unit">¶È</span></div>
-              <div class="stat-desc">±¾Äê¶È³äµç×ÜµçÁ¿</div>
+              <div class="stat-value">{{ formatNumber(statistics.totalEnergy) || 0 }} <span class="stat-unit">ï¿½ï¿½</span></div>
+              <div class="stat-desc">ï¿½ï¿½ï¿½ï¿½È³ï¿½ï¿½ï¿½Üµï¿½ï¿½ï¿½</div>
             </el-card>
           </el-col>
           
@@ -48,11 +48,11 @@
             <el-card shadow="hover" class="stat-card">
               <template #header>
                 <div class="card-header-small">
-                  <span>×Ü·ÑÓÃ</span>
+                  <span>ï¿½Ü·ï¿½ï¿½ï¿½</span>
                 </div>
               </template>
               <div class="stat-value">{{ formatNumber(statistics.totalFee) || 0 }} <span class="stat-unit">Ôª</span></div>
-              <div class="stat-desc">±¾Äê¶È³äµç×Ü·ÑÓÃ</div>
+              <div class="stat-desc">ï¿½ï¿½ï¿½ï¿½È³ï¿½ï¿½ï¿½Ü·ï¿½ï¿½ï¿½</div>
             </el-card>
           </el-col>
           
@@ -60,74 +60,74 @@
             <el-card shadow="hover" class="stat-card">
               <template #header>
                 <div class="card-header-small">
-                  <span>Æ½¾ùµ¥¼Û</span>
+                  <span>Æ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½</span>
                 </div>
               </template>
-              <div class="stat-value">{{ formatNumber(statistics.averagePrice) || 0 }} <span class="stat-unit">Ôª/¶È</span></div>
-              <div class="stat-desc">±¾Äê¶ÈÆ½¾ùµç¼Û</div>
+              <div class="stat-value">{{ formatNumber(statistics.averagePrice) || 0 }} <span class="stat-unit">Ôª/ï¿½ï¿½</span></div>
+              <div class="stat-desc">ï¿½ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½ï¿½ï¿½</div>
             </el-card>
           </el-col>
         </el-row>
         
-        <!-- ÏêÏ¸Êý¾Ý±í¸ñ -->
+        <!-- ï¿½ï¿½Ï¸ï¿½ï¿½ï¿½Ý±ï¿½ï¿½ï¿½ -->
         <div class="data-table-container">
-          <h3>ÔÂ¶ÈÏêÇé</h3>
+          <h3>ï¿½Â¶ï¿½ï¿½ï¿½ï¿½ï¿½</h3>
           <el-table :data="monthlyData" style="width: 100%">
-            <el-table-column label="ÔÂ·Ý" min-width="80">
+            <el-table-column label="ï¿½Â·ï¿½" min-width="80">
               <template #default="scope">
-                {{ scope.row.month }}ÔÂ
+                {{ scope.row.month }}ï¿½ï¿½
               </template>
             </el-table-column>
-            <el-table-column label="³äµç´ÎÊý" min-width="100">
+            <el-table-column label="ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" min-width="100">
               <template #default="scope">
-                {{ scope.row.count }}´Î
+                {{ scope.row.count }}ï¿½ï¿½
               </template>
             </el-table-column>
-            <el-table-column label="³äµçÁ¿" min-width="100">
+            <el-table-column label="ï¿½ï¿½ï¿½ï¿½ï¿½" min-width="100">
               <template #default="scope">
-                {{ formatNumber(scope.row.energy) }}¶È
+                {{ formatNumber(scope.row.energy) }}ï¿½ï¿½
               </template>
             </el-table-column>
-            <el-table-column label="µç·Ñ" min-width="100">
+            <el-table-column label="ï¿½ï¿½ï¿½" min-width="100">
               <template #default="scope">
                 {{ formatNumber(scope.row.electricityFee) }}Ôª
               </template>
             </el-table-column>
-            <el-table-column label="·þÎñ·Ñ" min-width="100">
+            <el-table-column label="ï¿½ï¿½ï¿½ï¿½ï¿½" min-width="100">
               <template #default="scope">
                 {{ formatNumber(scope.row.serviceFee) }}Ôª
               </template>
             </el-table-column>
-            <el-table-column label="×Ü·ÑÓÃ" min-width="100">
+            <el-table-column label="ï¿½Ü·ï¿½ï¿½ï¿½" min-width="100">
               <template #default="scope">
                 <span class="highlight-value">{{ formatNumber(scope.row.totalFee) }}Ôª</span>
               </template>
             </el-table-column>
-            <el-table-column label="Æ½¾ùµ¥¼Û" min-width="100">
+            <el-table-column label="Æ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" min-width="100">
               <template #default="scope">
-                {{ formatNumber(scope.row.averagePrice) }}Ôª/¶È
+                {{ formatNumber(scope.row.averagePrice) }}Ôª/ï¿½ï¿½
               </template>
             </el-table-column>
-            <el-table-column label="³äµçÊ±¶Î·Ö²¼" min-width="180">
+            <el-table-column label="ï¿½ï¿½ï¿½Ê±ï¿½Î·Ö²ï¿½" min-width="180">
               <template #default="scope">
                 <el-progress
                   :percentage="getPeakPercentage(scope.row)"
                   :color="customColors"
-                  :format="() => '·åÊ±: ' + scope.row.peakCount + '´Î'"
+                  :format="() => 'ï¿½ï¿½Ê±: ' + scope.row.peakCount + 'ï¿½ï¿½'"
                   :stroke-width="15"
                   style="margin-bottom: 5px"
                 />
                 <el-progress
                   :percentage="getNormalPercentage(scope.row)"
                   :color="customColors"
-                  :format="() => 'Æ½Ê±: ' + scope.row.normalCount + '´Î'"
+                  :format="() => 'Æ½Ê±: ' + scope.row.normalCount + 'ï¿½ï¿½'"
                   :stroke-width="15"
                   style="margin-bottom: 5px"
                 />
                 <el-progress
                   :percentage="getValleyPercentage(scope.row)"
                   :color="customColors"
-                  :format="() => '¹ÈÊ±: ' + scope.row.valleyCount + '´Î'"
+                  :format="() => 'ï¿½ï¿½Ê±: ' + scope.row.valleyCount + 'ï¿½ï¿½'"
                   :stroke-width="15"
                 />
               </template>
@@ -135,9 +135,9 @@
           </el-table>
         </div>
         
-        <!-- Ê±¶Î·Ö²¼Í¼±í -->
+        <!-- Ê±ï¿½Î·Ö²ï¿½Í¼ï¿½ï¿½ -->
         <div class="chart-container">
-          <h3>³äµçÊ±¶Î·Ö²¼</h3>
+          <h3>ï¿½ï¿½ï¿½Ê±ï¿½Î·Ö²ï¿½</h3>
           <v-chart class="chart" :option="pieChartOption" autoresize />
         </div>
       </div>
@@ -160,7 +160,7 @@ import VChart from 'vue-echarts'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
 
-// ×¢²á ECharts ×é¼þ
+// ×¢ï¿½ï¿½ ECharts ï¿½ï¿½ï¿½
 use([
   CanvasRenderer,
   BarChart,
@@ -172,7 +172,7 @@ use([
   GridComponent
 ])
 
-// Êý¾ÝºÍ×´Ì¬
+// ï¿½ï¿½ï¿½Ýºï¿½×´Ì¬
 const loading = ref(false)
 const selectedYear = ref(new Date().getFullYear())
 const records = ref([])
@@ -184,7 +184,7 @@ const statistics = ref({
   averagePrice: 0
 })
 
-// ×Ô¶¨ÒåÑÕÉ«
+// ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½É«
 const customColors = [
   { color: '#f56c6c', percentage: 20 },
   { color: '#e6a23c', percentage: 40 },
@@ -193,13 +193,13 @@ const customColors = [
   { color: '#6f7ad3', percentage: 100 }
 ]
 
-// ¼ÆËã¿ÉÑ¡µÄÄê·Ý£¨µ±Ç°Äê·ÝºÍÇ°2Äê£©
+// ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¡ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½Ç°ï¿½ï¿½Ýºï¿½Ç°2ï¿½ê£©
 const availableYears = computed(() => {
   const currentYear = new Date().getFullYear()
   return [currentYear, currentYear - 1, currentYear - 2]
 })
 
-// »ñÈ¡³äµç¼ÇÂ¼
+// ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Â¼
 const fetchRecords = async () => {
   loading.value = true
   try {
@@ -207,21 +207,21 @@ const fetchRecords = async () => {
     records.value = response
     processData()
   } catch (error) {
-    console.error('»ñÈ¡³äµç¼ÇÂ¼Ê§°Ü:', error)
-    ElMessage.error('»ñÈ¡³äµç¼ÇÂ¼Ê§°Ü')
+    console.error('ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Â¼Ê§ï¿½ï¿½:', error)
+    ElMessage.error('ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Â¼Ê§ï¿½ï¿½')
   } finally {
     loading.value = false
   }
 }
 
-// ´¦ÀíÊý¾Ý£¬°´ÔÂ·ÝÍ³¼Æ
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ï¿½Â·ï¿½Í³ï¿½ï¿½
 const processData = () => {
   const year = selectedYear.value
   const yearRecords = records.value.filter(record => 
     new Date(record.start_time).getFullYear() === year
   )
   
-  // ³õÊ¼»¯ÔÂ¶ÈÊý¾Ý
+  // ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½Â¶ï¿½ï¿½ï¿½ï¿½ï¿½
   const months = Array.from({ length: 12 }, (_, i) => ({
     month: i + 1,
     count: 0,
@@ -235,16 +235,22 @@ const processData = () => {
     averagePrice: 0
   }))
   
-  // Í³¼ÆÃ¿ÔÂÊý¾Ý
+  // Í³ï¿½ï¿½Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   yearRecords.forEach(record => {
     const month = new Date(record.start_time).getMonth()
     months[month].count++
-    months[month].energy += record.charging_amount
-    months[month].electricityFee += record.electricity_fee
-    months[month].serviceFee += record.service_fee
-    months[month].totalFee += record.total_fee
+    // ä½¿ç”¨å®žé™…æ•°æ®ï¼Œå¦‚æžœæ²¡æœ‰åˆ™ä½¿ç”¨è®¡åˆ’æ•°æ®
+    const actualAmount = record.actual_charging_amount || record.charging_amount || 0
+    const actualElectricityFee = parseFloat(record.actual_electricity_fee) || parseFloat(record.electricity_fee) || 0
+    const actualServiceFee = parseFloat(record.actual_service_fee) || parseFloat(record.service_fee) || 0
+    const actualTotalFee = parseFloat(record.actual_total_fee) || parseFloat(record.total_fee) || 0
     
-    // Í³¼ÆÊ±¶Î·Ö²¼
+    months[month].energy += actualAmount
+    months[month].electricityFee += actualElectricityFee
+    months[month].serviceFee += actualServiceFee
+    months[month].totalFee += actualTotalFee
+    
+    // Í³ï¿½ï¿½Ê±ï¿½Î·Ö²ï¿½
     if (record.time_period === 'peak') {
       months[month].peakCount++
     } else if (record.time_period === 'normal') {
@@ -254,7 +260,7 @@ const processData = () => {
     }
   })
   
-  // ¼ÆËãÆ½¾ùµ¥¼Û
+  // ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   months.forEach(month => {
     if (month.energy > 0) {
       month.averagePrice = month.totalFee / month.energy
@@ -263,11 +269,11 @@ const processData = () => {
   
   monthlyData.value = months
   
-  // ¼ÆËãÄê¶ÈÍ³¼Æ
+  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í³ï¿½ï¿½
   statistics.value = {
     totalCount: yearRecords.length,
-    totalEnergy: yearRecords.reduce((sum, record) => sum + record.charging_amount, 0),
-    totalFee: yearRecords.reduce((sum, record) => sum + record.total_fee, 0),
+    totalEnergy: yearRecords.reduce((sum, record) => sum + (record.actual_charging_amount || record.charging_amount || 0), 0),
+    totalFee: yearRecords.reduce((sum, record) => sum + (parseFloat(record.actual_total_fee) || parseFloat(record.total_fee) || 0), 0),
     averagePrice: 0
   }
   
@@ -276,7 +282,7 @@ const processData = () => {
   }
 }
 
-// ¼ÆËã³äµçÊ±¶Î°Ù·Ö±È
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½Î°Ù·Ö±ï¿½
 const getPeakPercentage = (row) => {
   const total = row.peakCount + row.normalCount + row.valleyCount
   return total === 0 ? 0 : Math.round((row.peakCount / total) * 100)
@@ -292,21 +298,21 @@ const getValleyPercentage = (row) => {
   return total === 0 ? 0 : Math.round((row.valleyCount / total) * 100)
 }
 
-// ¸ñÊ½»¯Êý×Ö
+// ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 const formatNumber = (num) => {
   if (num === undefined || num === null) return '0'
   return parseFloat(num).toFixed(2)
 }
 
-// Í¼±íÅäÖÃ
+// Í¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 const chartOption = computed(() => {
-  const months = monthlyData.value.map(item => item.month + 'ÔÂ')
+  const months = monthlyData.value.map(item => item.month + 'ï¿½ï¿½')
   const energyData = monthlyData.value.map(item => item.energy)
   const feeData = monthlyData.value.map(item => item.totalFee)
   
   return {
     title: {
-      text: selectedYear.value + 'Äê³äµçÏû·ÑÇ÷ÊÆ',
+      text: selectedYear.value + 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½',
       left: 'center'
     },
     tooltip: {
@@ -316,7 +322,7 @@ const chartOption = computed(() => {
       }
     },
     legend: {
-      data: ['³äµçÁ¿(¶È)', '·ÑÓÃ(Ôª)'],
+      data: ['ï¿½ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½)', 'ï¿½ï¿½ï¿½ï¿½(Ôª)'],
       bottom: '0%'
     },
     grid: {
@@ -332,18 +338,18 @@ const chartOption = computed(() => {
     yAxis: [
       {
         type: 'value',
-        name: '³äµçÁ¿(¶È)',
+        name: 'ï¿½ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½)',
         position: 'left'
       },
       {
         type: 'value',
-        name: '·ÑÓÃ(Ôª)',
+        name: 'ï¿½ï¿½ï¿½ï¿½(Ôª)',
         position: 'right'
       }
     ],
     series: [
       {
-        name: '³äµçÁ¿(¶È)',
+        name: 'ï¿½ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½)',
         type: 'bar',
         data: energyData,
         itemStyle: {
@@ -351,7 +357,7 @@ const chartOption = computed(() => {
         }
       },
       {
-        name: '·ÑÓÃ(Ôª)',
+        name: 'ï¿½ï¿½ï¿½ï¿½(Ôª)',
         type: 'line',
         yAxisIndex: 1,
         data: feeData,
@@ -368,16 +374,16 @@ const chartOption = computed(() => {
   }
 })
 
-// ±ýÍ¼ÅäÖÃ
+// ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½
 const pieChartOption = computed(() => {
-  // »ã×ÜËùÓÐÔÂ·ÝµÄÊ±¶ÎÊý¾Ý
+  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â·Ýµï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   const totalPeak = monthlyData.value.reduce((sum, month) => sum + month.peakCount, 0)
   const totalNormal = monthlyData.value.reduce((sum, month) => sum + month.normalCount, 0)
   const totalValley = monthlyData.value.reduce((sum, month) => sum + month.valleyCount, 0)
   
   return {
     title: {
-      text: selectedYear.value + 'Äê³äµçÊ±¶Î·Ö²¼',
+      text: selectedYear.value + 'ï¿½ï¿½ï¿½ï¿½Ê±ï¿½Î·Ö²ï¿½',
       left: 'center'
     },
     tooltip: {
@@ -387,11 +393,11 @@ const pieChartOption = computed(() => {
     legend: {
       orient: 'horizontal',
       bottom: '0%',
-      data: ['·åÊ±', 'Æ½Ê±', '¹ÈÊ±']
+      data: ['ï¿½ï¿½Ê±', 'Æ½Ê±', 'ï¿½ï¿½Ê±']
     },
     series: [
       {
-        name: '³äµçÊ±¶Î',
+        name: 'ï¿½ï¿½ï¿½Ê±ï¿½ï¿½',
         type: 'pie',
         radius: ['40%', '70%'],
         avoidLabelOverlap: false,
@@ -415,21 +421,21 @@ const pieChartOption = computed(() => {
           show: false
         },
         data: [
-          { value: totalPeak, name: '·åÊ±', itemStyle: { color: '#F56C6C' } },
+          { value: totalPeak, name: 'ï¿½ï¿½Ê±', itemStyle: { color: '#F56C6C' } },
           { value: totalNormal, name: 'Æ½Ê±', itemStyle: { color: '#E6A23C' } },
-          { value: totalValley, name: '¹ÈÊ±', itemStyle: { color: '#67C23A' } }
+          { value: totalValley, name: 'ï¿½ï¿½Ê±', itemStyle: { color: '#67C23A' } }
         ]
       }
     ]
   }
 })
 
-// ¼àÌýÄê·Ý±ä»¯ÖØÐÂ´¦ÀíÊý¾Ý
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý±ä»¯ï¿½ï¿½ï¿½Â´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 watch(selectedYear, () => {
   processData()
 })
 
-// ×é¼þ¹ÒÔØÊ±»ñÈ¡Êý¾Ý
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 onMounted(() => {
   fetchRecords()
 })

@@ -202,10 +202,12 @@ const chargingPowerConfig = ref({
 
 // 计费配置
 const billingConfig = ref({
-  peak_time_price: 1.0,
-  normal_time_price: 0.7,
-  valley_time_price: 0.4,
-  service_fee_price: 0.8,
+  prices: {
+    peak_time_price: 1.0,
+    normal_time_price: 0.7,
+    valley_time_price: 0.4,
+    service_fee_price: 0.8
+  },
   time_periods: {
     peak_times: [[10, 15], [18, 21]],
     normal_times: [[7, 10], [15, 18], [21, 23]],
@@ -220,25 +222,25 @@ const costBreakdown = ref(null)
 
 const fetchChargingConfig = async () => {
   try {
-    // 使用用户端API获取充电桩配置
+    // 使用用户端API获取配置
     const config = await api.get('/users/charging/config')
-    chargingPowerConfig.value.fast_charging_power = config.fast_charging_power
-    chargingPowerConfig.value.trickle_charging_power = config.trickle_charging_power
     
-    // 同时获取计费配置
-    if (config.billing) {
-      billingConfig.value = {
-        ...billingConfig.value,
-        ...config.billing
-      }
-    }
-  } catch (error) {
-    console.error('获取充电配置失败:', error)
-    // 使用默认值，不阻塞功能
+    // 更新充电功率配置
     chargingPowerConfig.value = {
-      fast_charging_power: 30.0,
-      trickle_charging_power: 7.0
+      fast_charging_power: config.fast_charging_power,
+      trickle_charging_power: config.trickle_charging_power
     }
+    
+    // 更新计费配置
+    if (config.billing) {
+      billingConfig.value = config.billing
+    }
+    
+    console.log('✅ 获取配置成功:', { chargingPowerConfig: chargingPowerConfig.value, billingConfig: billingConfig.value })
+  } catch (error) {
+    console.error('获取配置失败:', error)
+    ElMessage.warning('获取配置失败，使用默认配置')
+    // 保持原有默认值，不修改
   }
 }
 
@@ -278,9 +280,9 @@ const getCurrentTimePeriod = () => {
 const getCurrentElectricityPrice = () => {
   const period = getCurrentTimePeriod()
   switch (period) {
-    case '峰时': return billingConfig.value.peak_time_price
-    case '谷时': return billingConfig.value.valley_time_price
-    default: return billingConfig.value.normal_time_price
+    case '峰时': return billingConfig.value.prices.peak_time_price
+    case '谷时': return billingConfig.value.prices.valley_time_price
+    default: return billingConfig.value.prices.normal_time_price
   }
 }
 
@@ -312,7 +314,7 @@ const calculateEstimates = () => {
   
   // 计算费用
   const electricityPrice = getCurrentElectricityPrice()
-  const serviceFeePrice = billingConfig.value.service_fee_price
+  const serviceFeePrice = billingConfig.value.prices.service_fee_price
   
   const electricityCost = (requestForm.requested_amount * electricityPrice).toFixed(2)
   const serviceCost = (requestForm.requested_amount * serviceFeePrice).toFixed(2)

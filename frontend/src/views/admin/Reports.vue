@@ -227,7 +227,7 @@
         </el-table-column>
         <el-table-column prop="total_fee" label="总费用" width="100">
           <template #default="scope">
-            <span class="fee-amount">¥{{ scope.row.total_fee?.toFixed(2) || '0.00' }}</span>
+            <span class="fee-amount">¥{{ getActualTotalFee(scope.row) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="time_period" label="时段" width="80">
@@ -280,7 +280,7 @@
         </el-table-column>
         <el-table-column prop="total_cost" label="总费用" width="120">
           <template #default="scope">
-            <span class="fee-amount">¥{{ scope.row.total_cost?.toFixed(2) || '0.00' }}</span>
+            <span class="fee-amount">¥{{ getActualTotalFee(scope.row) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="注册时间" width="160">
@@ -367,8 +367,11 @@
           <el-descriptions-item label="充电桩">
             {{ selectedOrder.charging_pile?.pile_number || '未分配' }}
           </el-descriptions-item>
-          <el-descriptions-item label="充电量">
+          <el-descriptions-item label="计划充电量">
             {{ selectedOrder.charging_amount?.toFixed(2) || '0.00' }} 度
+          </el-descriptions-item>
+          <el-descriptions-item label="实际充电量" v-if="selectedOrder.actual_charging_amount">
+            <span class="actual-amount">{{ selectedOrder.actual_charging_amount.toFixed(2) }} 度</span>
           </el-descriptions-item>
           <el-descriptions-item label="充电时长">
             {{ formatDuration(selectedOrder.charging_duration) }}
@@ -376,14 +379,23 @@
           <el-descriptions-item label="时段">
             {{ selectedOrder.time_period || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="电费">
+          <el-descriptions-item label="计划电费">
             ¥{{ selectedOrder.electricity_fee?.toFixed(2) || '0.00' }}
           </el-descriptions-item>
-          <el-descriptions-item label="服务费">
+          <el-descriptions-item label="实际电费" v-if="selectedOrder.actual_electricity_fee">
+            <span class="actual-fee">¥{{ selectedOrder.actual_electricity_fee.toFixed(2) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="计划服务费">
             ¥{{ selectedOrder.service_fee?.toFixed(2) || '0.00' }}
           </el-descriptions-item>
-          <el-descriptions-item label="总费用" :span="2">
-            <span class="total-fee">¥{{ selectedOrder.total_fee?.toFixed(2) || '0.00' }}</span>
+          <el-descriptions-item label="实际服务费" v-if="selectedOrder.actual_service_fee">
+            <span class="actual-fee">¥{{ selectedOrder.actual_service_fee.toFixed(2) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="计划总费用">
+            ¥{{ selectedOrder.total_fee?.toFixed(2) || '0.00' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="实际总费用" v-if="selectedOrder.actual_total_fee">
+            <span class="actual-total-fee">¥{{ selectedOrder.actual_total_fee.toFixed(2) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="创建时间">
             {{ formatDateTime(selectedOrder.created_at) }}
@@ -566,6 +578,27 @@ const getTableTitle = () => {
   return titleMap[reportType.value] || '数据表格'
 }
 
+// 获取实际总费用（优先显示实际费用，如果为null则显示0）
+const getActualTotalFee = (row) => {
+  // 对于订单数据，优先显示实际总费用
+  if (row.actual_total_fee !== null && row.actual_total_fee !== undefined) {
+    return row.actual_total_fee.toFixed(2)
+  }
+  
+  // 如果没有实际费用，检查计划费用
+  if (row.total_fee !== null && row.total_fee !== undefined) {
+    return row.total_fee.toFixed(2)
+  }
+  
+  // 检查其他可能的费用字段（如total_cost用于用户统计）
+  if (row.total_cost !== null && row.total_cost !== undefined) {
+    return row.total_cost.toFixed(2)
+  }
+  
+  // 如果都没有，返回0
+  return '0.00'
+}
+
 // 获取概览统计
 const fetchStats = async () => {
   try {
@@ -588,8 +621,13 @@ const fetchStats = async () => {
           totalOrders += userOrders.data.length
           
           userOrders.data.forEach(order => {
-            if (order.total_fee) totalRevenue += order.total_fee
-            if (order.charging_amount) totalEnergy += order.charging_amount
+            // 优先使用实际费用，如果为空则使用计划费用
+            const actualFee = order.actual_total_fee || order.total_fee || 0
+            totalRevenue += actualFee
+            
+            // 优先使用实际充电量，如果为空则使用计划充电量
+            const actualAmount = order.actual_charging_amount || order.charging_amount || 0
+            totalEnergy += actualAmount
           })
         }
       } catch (error) {
@@ -1053,6 +1091,22 @@ onMounted(async () => {
 }
 
 .total-fee {
+  color: #e6a23c;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.actual-amount {
+  font-weight: bold;
+  color: #67c23a;
+}
+
+.actual-fee {
+  font-weight: bold;
+  color: #409eff;
+}
+
+.actual-total-fee {
   color: #e6a23c;
   font-weight: bold;
   font-size: 18px;

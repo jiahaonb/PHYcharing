@@ -289,10 +289,12 @@ const chargingConfig = ref({
 
 // 计费配置
 const billingConfig = ref({
-  peak_time_price: 1.0,
-  normal_time_price: 0.7,
-  valley_time_price: 0.4,
-  service_fee_price: 0.8,
+  prices: {
+    peak_time_price: 1.0,
+    normal_time_price: 0.7,
+    valley_time_price: 0.4,
+    service_fee_price: 0.8
+  },
   time_periods: {
     peak_times: [[10, 15], [18, 21]],
     normal_times: [[7, 10], [15, 18], [21, 23]],
@@ -537,19 +539,23 @@ const formatTime = (timeStr) => {
 const fetchChargingConfig = async () => {
   try {
     const config = await userApi.getChargingConfig()
-    if (config.status === 'success') {
-      chargingConfig.value = config.data
-      // 同时获取计费配置
-      if (config.data.billing) {
-        billingConfig.value = {
-          ...billingConfig.value,
-          ...config.data.billing
-        }
-      }
+    
+    // 更新充电配置
+    chargingConfig.value = {
+      fast_charging_power: config.fast_charging_power,
+      trickle_charging_power: config.trickle_charging_power
     }
+    
+    // 更新计费配置
+    if (config.billing) {
+      billingConfig.value = config.billing
+    }
+    
+    console.log('✅ 获取配置成功:', { chargingConfig: chargingConfig.value, billingConfig: billingConfig.value })
   } catch (error) {
-    console.error('获取充电配置失败:', error)
-    // 使用默认值
+    console.error('获取配置失败:', error)
+    ElMessage.warning('获取配置失败，使用默认配置')
+    // 保持原有默认值，不修改
   }
 }
 
@@ -580,9 +586,9 @@ const getCurrentTimePeriod = () => {
 const getCurrentElectricityPrice = () => {
   const period = getCurrentTimePeriod()
   switch (period) {
-    case '峰时': return billingConfig.value.peak_time_price
-    case '谷时': return billingConfig.value.valley_time_price
-    default: return billingConfig.value.normal_time_price
+    case '峰时': return billingConfig.value.prices.peak_time_price
+    case '谷时': return billingConfig.value.prices.valley_time_price
+    default: return billingConfig.value.prices.normal_time_price
   }
 }
 
@@ -614,7 +620,7 @@ const calculateEstimates = () => {
   
   // 计算费用
   const electricityPrice = getCurrentElectricityPrice()
-  const serviceFeePrice = billingConfig.value.service_fee_price
+  const serviceFeePrice = billingConfig.value.prices.service_fee_price
   
   const electricityCost = (chargingForm.requested_amount * electricityPrice).toFixed(2)
   const serviceCost = (chargingForm.requested_amount * serviceFeePrice).toFixed(2)

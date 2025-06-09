@@ -8,6 +8,10 @@
           <el-icon><Refresh /></el-icon>
           刷新场景
         </el-button>
+        <el-button @click="reloadConfig" :loading="loading" type="primary">
+          <el-icon><Setting /></el-icon>
+          重载配置
+        </el-button>
         <el-switch 
           v-model="autoRefresh"
           active-text="自动刷新"
@@ -19,48 +23,56 @@
     <!-- 场景统计信息 -->
     <div class="scene-stats">
       <el-row :gutter="20">
-        <el-col :span="4">
+        <el-col :span="3">
           <div class="stat-item">
             <div class="stat-number">{{ sceneStats.stayingVehicles }}</div>
             <div class="stat-label">暂留区车辆</div>
             <div class="stat-color stay"></div>
           </div>
         </el-col>
-        <el-col :span="4">
+        <el-col :span="3">
           <div class="stat-item">
             <div class="stat-number">{{ sceneStats.fastWaitingVehicles }}</div>
             <div class="stat-label">快充等候</div>
             <div class="stat-color fast-waiting"></div>
           </div>
         </el-col>
-        <el-col :span="4">
+        <el-col :span="3">
           <div class="stat-item">
             <div class="stat-number">{{ sceneStats.trickleWaitingVehicles }}</div>
             <div class="stat-label">慢充等候</div>
             <div class="stat-color trickle-waiting"></div>
           </div>
         </el-col>
-        <el-col :span="4">
+        <el-col :span="3">
+          <div class="stat-item">
+            <div class="stat-number">{{ sceneStats.fastQueuingVehicles }}</div>
+            <div class="stat-label">快充排队中</div>
+            <div class="stat-color fast-queuing"></div>
+          </div>
+        </el-col>
+        <el-col :span="3">
+          <div class="stat-item">
+            <div class="stat-number">{{ sceneStats.trickleQueuingVehicles }}</div>
+            <div class="stat-label">慢充排队中</div>
+            <div class="stat-color trickle-queuing"></div>
+          </div>
+        </el-col>
+        <el-col :span="3">
           <div class="stat-item">
             <div class="stat-number">{{ sceneStats.fastChargingVehicles }}</div>
             <div class="stat-label">快充中</div>
             <div class="stat-color fast-charging"></div>
           </div>
         </el-col>
-        <el-col :span="4">
+        <el-col :span="3">
           <div class="stat-item">
             <div class="stat-number">{{ sceneStats.trickleChargingVehicles }}</div>
             <div class="stat-label">慢充中</div>
             <div class="stat-color trickle-charging"></div>
           </div>
         </el-col>
-        <el-col :span="4">
-          <div class="stat-item">
-            <div class="stat-number">{{ sceneStats.totalVehicles }}</div>
-            <div class="stat-label">总车辆数</div>
-            <div class="stat-color total"></div>
-          </div>
-        </el-col>
+
       </el-row>
     </div>
 
@@ -118,18 +130,18 @@
                 <div class="queue-line" v-else>
                   <div 
                     v-for="(vehicle, index) in fastWaitingVehicles" 
-                    :key="`fast-wait-${vehicle.record_number}`"
+                    :key="`fast-wait-${vehicle.queue_number}`"
                     class="vehicle-item waiting fast"
-                    @click="showOrderDetail(vehicle)"
+                    @click="showWaitingVehicleDetail(vehicle)"
                   >
-                    <div class="queue-position">{{ vehicle.queue_position }}</div>
+                    <div class="queue-position">{{ vehicle.position }}</div>
                     <div class="vehicle-icon">
                       <el-icon><Van /></el-icon>
                     </div>
                     <div class="vehicle-info">
                       <div class="vehicle-plate">{{ vehicle.license_plate }}</div>
                       <div class="vehicle-status">快充等候</div>
-                      <div class="queue-number">{{ vehicle.record_number }}</div>
+                      <div class="queue-number">{{ vehicle.queue_number }}</div>
                     </div>
                   </div>
                 </div>
@@ -150,18 +162,18 @@
                 <div class="queue-line" v-else>
                   <div 
                     v-for="(vehicle, index) in trickleWaitingVehicles" 
-                    :key="`trickle-wait-${vehicle.record_number}`"
+                    :key="`trickle-wait-${vehicle.queue_number}`"
                     class="vehicle-item waiting trickle"
-                    @click="showOrderDetail(vehicle)"
+                    @click="showWaitingVehicleDetail(vehicle)"
                   >
-                    <div class="queue-position">{{ vehicle.queue_position }}</div>
+                    <div class="queue-position">{{ vehicle.position }}</div>
                     <div class="vehicle-icon">
                       <el-icon><Van /></el-icon>
                     </div>
                     <div class="vehicle-info">
                       <div class="vehicle-plate">{{ vehicle.license_plate }}</div>
                       <div class="vehicle-status">慢充等候</div>
-                      <div class="queue-number">{{ vehicle.record_number }}</div>
+                      <div class="queue-number">{{ vehicle.queue_number }}</div>
                     </div>
                   </div>
                 </div>
@@ -193,15 +205,15 @@
                     {{ getPileStatusText(pile.status) }}
                   </div>
                   <div class="pile-info-row">
-                    <!-- 剩余时间显示 -->
-                    <div class="remaining-time" v-if="pile.current_charging_order && pile.current_charging_order.remaining_time !== null && pile.current_charging_order.remaining_time !== undefined">
+                    <!-- 总时长显示（和调度算法保持一致） -->
+                    <div class="total-completion-time" v-if="pile.totalCompletionTime > 0">
                       <el-tag 
-                        :type="getRemainingTimeTagType(pile.current_charging_order.remaining_time)" 
+                        :type="getTotalTimeTagType(pile.totalCompletionTime)" 
                         size="small"
                         effect="dark"
                       >
                         <el-icon><Clock /></el-icon>
-                        {{ formatRemainingTime(pile.current_charging_order.remaining_time) }}
+                        总时长: {{ formatTotalCompletionTime(pile.totalCompletionTime) }}
                       </el-tag>
                     </div>
                     <div class="pile-power">{{ pile.power }}kW</div>
@@ -224,7 +236,12 @@
                             <el-icon><Van /></el-icon>
                           </div>
                           <div class="vehicle-plate">{{ pile.chargingVehicle.license_plate }}</div>
-                          <div class="charging-time">{{ getChargingTime(pile.chargingVehicle) }}</div>
+                          <div class="charging-time" v-if="pile.current_charging_order && pile.current_charging_order.remaining_time !== null">
+                            剩余: {{ formatRemainingTime(pile.current_charging_order.remaining_time) }}
+                          </div>
+                          <div class="charging-time" v-else>
+                            {{ getChargingTime(pile.chargingVehicle) }}
+                          </div>
                           <div class="charging-indicator">
                             <el-icon class="charging-icon"><Lightning /></el-icon>
                           </div>
@@ -281,15 +298,15 @@
                     {{ getPileStatusText(pile.status) }}
                   </div>
                   <div class="pile-info-row">
-                    <!-- 剩余时间显示 -->
-                    <div class="remaining-time" v-if="pile.current_charging_order && pile.current_charging_order.remaining_time !== null && pile.current_charging_order.remaining_time !== undefined">
+                    <!-- 总时长显示（和调度算法保持一致） -->
+                    <div class="total-completion-time" v-if="pile.totalCompletionTime > 0">
                       <el-tag 
-                        :type="getRemainingTimeTagType(pile.current_charging_order.remaining_time)" 
+                        :type="getTotalTimeTagType(pile.totalCompletionTime)" 
                         size="small"
                         effect="dark"
                       >
                         <el-icon><Clock /></el-icon>
-                        {{ formatRemainingTime(pile.current_charging_order.remaining_time) }}
+                        总时长: {{ formatTotalCompletionTime(pile.totalCompletionTime) }}
                       </el-tag>
                     </div>
                     <div class="pile-power">{{ pile.power }}kW</div>
@@ -312,7 +329,12 @@
                             <el-icon><Van /></el-icon>
                           </div>
                           <div class="vehicle-plate">{{ pile.chargingVehicle.license_plate }}</div>
-                          <div class="charging-time">{{ getChargingTime(pile.chargingVehicle) }}</div>
+                          <div class="charging-time" v-if="pile.current_charging_order && pile.current_charging_order.remaining_time !== null">
+                            剩余: {{ formatRemainingTime(pile.current_charging_order.remaining_time) }}
+                          </div>
+                          <div class="charging-time" v-else>
+                            {{ getChargingTime(pile.chargingVehicle) }}
+                          </div>
                           <div class="charging-indicator">
                             <el-icon class="charging-icon"><More /></el-icon>
                           </div>
@@ -424,8 +446,11 @@
                 {{ selectedVehicleOrder.charging_mode === 'fast' ? '快充' : '慢充' }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="申请充电量">
+            <el-descriptions-item label="计划充电量">
               <strong>{{ selectedVehicleOrder.charging_amount }} 度</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="实际充电量" v-if="selectedVehicleOrder.actual_charging_amount">
+              <strong style="color: #67c23a;">{{ selectedVehicleOrder.actual_charging_amount.toFixed(2) }} 度</strong>
             </el-descriptions-item>
             <el-descriptions-item label="订单状态">
               <el-tag :type="getOrderStatusType(selectedVehicleOrder.queue_status || selectedVehicleOrder.status)" size="small">
@@ -482,14 +507,23 @@
             </el-descriptions-item>
             
             <!-- 费用信息 -->
-            <el-descriptions-item label="充电费用" v-if="selectedVehicleOrder.electricity_fee !== undefined">
+            <el-descriptions-item label="计划电费" v-if="selectedVehicleOrder.electricity_fee !== undefined">
               <strong style="color: #67C23A;">¥{{ selectedVehicleOrder.electricity_fee }}</strong>
             </el-descriptions-item>
-            <el-descriptions-item label="服务费用" v-if="selectedVehicleOrder.service_fee !== undefined">
+            <el-descriptions-item label="实际电费" v-if="selectedVehicleOrder.actual_electricity_fee !== undefined">
+              <strong style="color: #409eff;">¥{{ selectedVehicleOrder.actual_electricity_fee.toFixed(2) }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="计划服务费" v-if="selectedVehicleOrder.service_fee !== undefined">
               <strong style="color: #E6A23C;">¥{{ selectedVehicleOrder.service_fee }}</strong>
             </el-descriptions-item>
-            <el-descriptions-item label="总费用" v-if="selectedVehicleOrder.total_fee !== undefined">
+            <el-descriptions-item label="实际服务费" v-if="selectedVehicleOrder.actual_service_fee !== undefined">
+              <strong style="color: #409eff;">¥{{ selectedVehicleOrder.actual_service_fee.toFixed(2) }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="计划总费用" v-if="selectedVehicleOrder.total_fee !== undefined">
               <strong style="color: #F56C6C; font-size: 16px;">¥{{ selectedVehicleOrder.total_fee }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item label="实际总费用" v-if="selectedVehicleOrder.actual_total_fee !== undefined">
+              <strong style="color: #F56C6C; font-size: 16px;">¥{{ selectedVehicleOrder.actual_total_fee.toFixed(2) }}</strong>
             </el-descriptions-item>
             <el-descriptions-item label="时段电价" v-if="selectedVehicleOrder.time_period && selectedVehicleOrder.unit_price">
               {{ selectedVehicleOrder.time_period }} (¥{{ selectedVehicleOrder.unit_price }}/度)
@@ -502,10 +536,10 @@
           <el-divider content-position="left">管理操作</el-divider>
           <div class="action-buttons">
             <el-button 
-              v-if="selectedVehicle.status === '等候' || selectedVehicle.status === 'waiting'"
+              v-if="selectedVehicle.status === '排队中' || selectedVehicle.status === 'waiting'"
               type="warning"
-              @click="cancelQueue(selectedVehicle)"
-              :loading="selectedVehicle.cancelling"
+              @click="cancelQueue(selectedVehicleOrder)"
+              :loading="selectedVehicleOrder.cancelling"
             >
               <el-icon><Close /></el-icon>
               取消排队
@@ -513,8 +547,8 @@
             <el-button 
               v-if="selectedVehicle.status === '充电中' || selectedVehicle.status === 'charging'"
               type="danger"
-              @click="stopCharging(selectedVehicle)"
-              :loading="selectedVehicle.stopping"
+              @click="stopCharging(selectedVehicleOrder)"
+              :loading="selectedVehicleOrder.stopping"
             >
               <el-icon><VideoPause /></el-icon>
               停止充电
@@ -540,7 +574,9 @@ import {
   Van, 
   Plus,
   Close,
-  Clock
+  Clock,
+  VideoPause,
+  Setting
 } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { useAuthStore } from '@/store/auth'
@@ -550,6 +586,7 @@ const loading = ref(false)
 const autoRefresh = ref(true)
 const vehicles = ref([])
 const chargingPiles = ref([])
+const waitingVehicles = ref({ fast_waiting: [], trickle_waiting: [], total_waiting: 0 })
 // const queueData = ref([]) // 已删除，不再使用队列数据
 const vehicleDetailVisible = ref(false)
 const selectedVehicle = ref(null)
@@ -557,7 +594,7 @@ const selectedVehicleOrder = ref(null)
 const refreshInterval = ref(null)
 
 // 配置参数
-const spotsPerPile = ref(3) // 每个充电桩的排队位数量
+const spotsPerPile = ref(3) // 每个充电桩的排队位数量，从配置中获取
 const systemConfig = ref({})
 
 // 计算属性 - 按新逻辑分区
@@ -570,13 +607,21 @@ const sceneStats = computed(() => {
   const trickleCharging = trickleChargingPiles.value.reduce((count, pile) => 
     count + (pile.chargingVehicle ? 1 : 0), 0)
   
+  // 计算排队中的车辆数量（充电桩排队区）
+  const fastQueuing = fastChargingPiles.value.reduce((count, pile) => 
+    count + (pile.queue_orders ? pile.queue_orders.length : 0), 0)
+  const trickleQueuing = trickleChargingPiles.value.reduce((count, pile) => 
+    count + (pile.queue_orders ? pile.queue_orders.length : 0), 0)
+  
   return {
     stayingVehicles: staying,
     fastWaitingVehicles: fastWaiting,
     trickleWaitingVehicles: trickleWaiting,
+    fastQueuingVehicles: fastQueuing, // 新增：快充排队中
+    trickleQueuingVehicles: trickleQueuing, // 新增：慢充排队中
     fastChargingVehicles: fastCharging,
     trickleChargingVehicles: trickleCharging,
-    totalVehicles: staying + fastWaiting + trickleWaiting + fastCharging + trickleCharging
+    totalVehicles: staying + fastWaiting + trickleWaiting + fastQueuing + trickleQueuing + fastCharging + trickleCharging
   }
 })
 
@@ -603,6 +648,16 @@ const stayingVehicles = computed(() => {
       }
     })
     
+    // 从等候区数据中收集等候车辆的车牌号
+    if (waitingVehicles.value) {
+      waitingVehicles.value.fast_waiting?.forEach(vehicle => {
+        activeLicensePlates.add(vehicle.license_plate)
+      })
+      waitingVehicles.value.trickle_waiting?.forEach(vehicle => {
+        activeLicensePlates.add(vehicle.license_plate)
+      })
+    }
+    
     // 暂留区显示不在活跃列表中的车辆
     return allVehicles.filter(vehicle => 
       vehicle && vehicle.license_plate && !activeLicensePlates.has(vehicle.license_plate)
@@ -613,64 +668,44 @@ const stayingVehicles = computed(() => {
   }
 })
 
-// 快充等候车辆 - 从充电桩数据中提取
+// 快充等候车辆 - 从专门的等候区API获取
 const fastWaitingVehicles = computed(() => {
   try {
-    const waitingVehicles = []
+    if (!waitingVehicles.value || !waitingVehicles.value.fast_waiting) {
+      return []
+    }
     
-    // 遍历所有快充桩，收集等候的车辆
-    const fastPiles = (chargingPiles.value || []).filter(pile => pile.type === 'fast')
-    
-    fastPiles.forEach(pile => {
-      if (pile.queue_orders && pile.queue_orders.length > 0) {
-        pile.queue_orders.forEach((order, index) => {
-          waitingVehicles.push({
-            record_number: order.record_number,
-            license_plate: order.vehicle_license_plate,
-            remaining_time: order.remaining_time,
-            start_time: order.start_time,
-            charging_amount: order.charging_amount,
-            queue_position: index + 1,
-            pile_id: pile.pile_id,
-            status: '快充等候'
-          })
-        })
-      }
-    })
-    
-    return waitingVehicles.sort((a, b) => a.queue_position - b.queue_position)
+    return waitingVehicles.value.fast_waiting.map(vehicle => ({
+      queue_number: vehicle.queue_number,
+      license_plate: vehicle.license_plate,
+      user_name: vehicle.user_name,
+      position: vehicle.position,
+      queue_time: vehicle.queue_time,
+      charging_amount: vehicle.charging_amount,
+      status: '快充等候'
+    }))
   } catch (error) {
     console.error('计算快充等候车辆时出错:', error)
     return []
   }
 })
 
-// 慢充等候车辆 - 从充电桩数据中提取
+// 慢充等候车辆 - 从专门的等候区API获取
 const trickleWaitingVehicles = computed(() => {
   try {
-    const waitingVehicles = []
+    if (!waitingVehicles.value || !waitingVehicles.value.trickle_waiting) {
+      return []
+    }
     
-    // 遍历所有慢充桩，收集等候的车辆
-    const tricklePiles = (chargingPiles.value || []).filter(pile => pile.type === 'trickle')
-    
-    tricklePiles.forEach(pile => {
-      if (pile.queue_orders && pile.queue_orders.length > 0) {
-        pile.queue_orders.forEach((order, index) => {
-          waitingVehicles.push({
-            record_number: order.record_number,
-            license_plate: order.vehicle_license_plate,
-            remaining_time: order.remaining_time,
-            start_time: order.start_time,
-            charging_amount: order.charging_amount,
-            queue_position: index + 1,
-            pile_id: pile.pile_id,
-            status: '慢充等候'
-          })
-        })
-      }
-    })
-    
-    return waitingVehicles.sort((a, b) => a.queue_position - b.queue_position)
+    return waitingVehicles.value.trickle_waiting.map(vehicle => ({
+      queue_number: vehicle.queue_number,
+      license_plate: vehicle.license_plate,
+      user_name: vehicle.user_name,
+      position: vehicle.position,
+      queue_time: vehicle.queue_time,
+      charging_amount: vehicle.charging_amount,
+      status: '慢充等候'
+    }))
   } catch (error) {
     console.error('计算慢充等候车辆时出错:', error)
     return []
@@ -701,10 +736,27 @@ const fastChargingPiles = computed(() => {
           } : null
         }))
         
+        // 计算充电桩总时长（和调度算法保持一致）
+        let totalCompletionTime = 0
+        
+        // 1. 当前充电车辆剩余时间
+        if (pile.current_charging_order && pile.current_charging_order.remaining_time) {
+          totalCompletionTime += pile.current_charging_order.remaining_time / 60.0 // 转换为小时
+        }
+        
+        // 2. 所有排队车辆的充电时间
+        if (pile.queue_orders && pile.queue_orders.length > 0) {
+          pile.queue_orders.forEach(order => {
+            const chargingTime = order.charging_amount / pile.power // 小时
+            totalCompletionTime += chargingTime
+          })
+        }
+        
         return {
           ...pile,
           chargingVehicle,
-          queueSpots
+          queueSpots,
+          totalCompletionTime: totalCompletionTime // 新增总时长字段
         }
       })
     
@@ -739,10 +791,27 @@ const trickleChargingPiles = computed(() => {
           } : null
         }))
         
+        // 计算充电桩总时长（和调度算法保持一致）
+        let totalCompletionTime = 0
+        
+        // 1. 当前充电车辆剩余时间
+        if (pile.current_charging_order && pile.current_charging_order.remaining_time) {
+          totalCompletionTime += pile.current_charging_order.remaining_time / 60.0 // 转换为小时
+        }
+        
+        // 2. 所有排队车辆的充电时间
+        if (pile.queue_orders && pile.queue_orders.length > 0) {
+          pile.queue_orders.forEach(order => {
+            const chargingTime = order.charging_amount / pile.power // 小时
+            totalCompletionTime += chargingTime
+          })
+        }
+        
         return {
           ...pile,
           chargingVehicle,
-          queueSpots
+          queueSpots,
+          totalCompletionTime: totalCompletionTime // 新增总时长字段
         }
       })
     
@@ -820,16 +889,21 @@ const fetchAllData = async () => {
   try {
     console.log('🔄 开始获取场景数据...')
     
-    // 并行获取数据，提高效率
-    const [vehiclesResult, pilesResult, configResult] = await Promise.allSettled([
-      fetchVehicles(),
-      fetchChargingPiles(),
+    // 先获取配置，再获取其他数据（确保排队位数量配置生效）
+    const configResult = await Promise.allSettled([
       fetchSystemConfig()
     ])
     
+    // 然后并行获取其他数据
+    const [vehiclesResult, pilesResult, waitingResult] = await Promise.allSettled([
+      fetchVehicles(),
+      fetchChargingPiles(),
+      fetchWaitingVehicles()
+    ])
+    
     // 检查是否有失败的请求
-    const failedRequests = [vehiclesResult, pilesResult, configResult]
-      .filter(result => result.status === 'rejected')
+    const allResults = [...configResult, vehiclesResult, pilesResult, waitingResult]
+    const failedRequests = allResults.filter(result => result.status === 'rejected')
     
     if (failedRequests.length > 0) {
       console.warn('⚠️ 部分数据获取失败:', failedRequests.length)
@@ -900,23 +974,76 @@ const fetchChargingPiles = async () => {
   }
 }
 
+const fetchWaitingVehicles = async () => {
+  try {
+    const response = await api.get('/admin/scene/waiting-vehicles')
+    waitingVehicles.value = response || { fast_waiting: [], trickle_waiting: [], total_waiting: 0 }
+    console.log('✅ 获取等候区数据成功:', {
+      快充等候: waitingVehicles.value.fast_waiting.length,
+      慢充等候: waitingVehicles.value.trickle_waiting.length,
+      总计等候: waitingVehicles.value.total_waiting
+    })
+  } catch (error) {
+    console.error('获取等候区数据失败:', error)
+    waitingVehicles.value = { fast_waiting: [], trickle_waiting: [], total_waiting: 0 }
+    throw error
+  }
+}
+
 // fetchQueueData 函数已被删除，因为不再使用队列数据
 // 现在从 fetchChargingPiles API 获取所有相关信息
 
 const fetchSystemConfig = async () => {
   try {
-    const response = await api.get('/users/charging/config')
-    systemConfig.value = response || {}
+    // 获取用户端配置（包含充电和计费配置）
+    const userConfigResponse = await api.get('/users/charging/config')
+    
+    // 获取队列设置配置（充电桩排队位数量）
+    let queueConfig = null
+    try {
+      queueConfig = await api.get('/admin/config/queue_settings.charging_queue_len')
+      spotsPerPile.value = parseInt(queueConfig.config_value) || 3
+    } catch (queueError) {
+      console.warn('获取充电桩排队位配置失败，使用默认值3:', queueError)
+      spotsPerPile.value = 3
+    }
+    
+    systemConfig.value = {
+      fast_charging_power: userConfigResponse.fast_charging_power,
+      trickle_charging_power: userConfigResponse.trickle_charging_power,
+      fast_charging_pile_num: userConfigResponse.fast_charging_pile_num,
+      trickle_charging_pile_num: userConfigResponse.trickle_charging_pile_num,
+      billing: userConfigResponse.billing,
+      queue_spots_per_pile: spotsPerPile.value
+    }
+    
     console.log('✅ 获取系统配置成功:', {
-      快充功率: response.fast_charging_power,
-      慢充功率: response.trickle_charging_power
+      快充功率: systemConfig.value.fast_charging_power,
+      慢充功率: systemConfig.value.trickle_charging_power,
+      排队位数量: spotsPerPile.value,
+      计费配置: systemConfig.value.billing ? '已加载' : '未加载'
     })
   } catch (error) {
     console.error('获取系统配置失败:', error)
     // 使用默认值
+    spotsPerPile.value = 3
     systemConfig.value = {
       fast_charging_power: 30,
-      trickle_charging_power: 7
+      trickle_charging_power: 7,
+      queue_spots_per_pile: 3,
+      billing: {
+        prices: {
+          peak_time_price: 1.0,
+          normal_time_price: 0.7,
+          valley_time_price: 0.4,
+          service_fee_price: 0.8
+        },
+        time_periods: {
+          peak_times: [[10, 15], [18, 21]],
+          normal_times: [[7, 10], [15, 18], [21, 23]],
+          valley_times: [[23, 7]]
+        }
+      }
     }
     throw error
   }
@@ -966,9 +1093,59 @@ const resetAnimation = () => {
   }, 100)
 }
 
+// 重新加载配置（当管理员修改配置时调用）
+const reloadConfig = async () => {
+  try {
+    loading.value = true
+    console.log('🔄 重新加载配置...')
+    
+    // 重新获取配置
+    await fetchSystemConfig()
+    
+    // 重新获取充电桩数据（应用新的排队位数量）
+    await fetchChargingPiles()
+    
+    ElMessage.success('配置已重新加载')
+    console.log('✅ 配置重新加载完成，排队位数量:', spotsPerPile.value)
+    
+  } catch (error) {
+    console.error('重新加载配置失败:', error)
+    ElMessage.error('重新加载配置失败')
+  } finally {
+    loading.value = false
+  }
+}
 
 
 
+
+
+// 显示等候区车辆详情
+const showWaitingVehicleDetail = async (vehicle) => {
+  try {
+    console.log('🔍 显示等候区车辆详情:', vehicle.queue_number)
+    
+    // 构建车辆信息（等候区车辆）
+    selectedVehicle.value = {
+      license_plate: vehicle.license_plate,
+      status: vehicle.status,
+      queue_number: vehicle.queue_number,
+      position: vehicle.position,
+      user_name: vehicle.user_name,
+      charging_amount: vehicle.charging_amount,
+      queue_time: vehicle.queue_time
+    }
+    
+    // 等候区车辆没有充电记录，清空订单信息
+    selectedVehicleOrder.value = null
+    
+    vehicleDetailVisible.value = true
+    
+  } catch (error) {
+    console.error('显示等候区车辆详情失败:', error.message || error)
+    ElMessage.error('显示车辆详情失败')
+  }
+}
 
 // 显示暂留区车辆详情（只显示车辆信息，不显示订单）
 const showStayingVehicleDetail = async (vehicle) => {
@@ -1189,6 +1366,33 @@ const getRemainingTimeTagType = (minutes) => {
   return 'primary'                     // 超过1小时 - 蓝色
 }
 
+// 获取总时长标签类型
+const getTotalTimeTagType = (hours) => {
+  if (hours === null || hours === undefined || hours <= 0) return 'info'
+  if (hours <= 0.5) return 'success'   // 30分钟内 - 绿色
+  if (hours <= 1) return 'warning'     // 1小时内 - 橙色
+  if (hours <= 2) return 'primary'     // 2小时内 - 蓝色
+  return 'danger'                      // 超过2小时 - 红色
+}
+
+// 格式化总时长显示
+const formatTotalCompletionTime = (hours) => {
+  if (hours === null || hours === undefined || hours <= 0) return '0分钟'
+  
+  const totalMinutes = Math.round(hours * 60)
+  if (totalMinutes < 60) {
+    return `${totalMinutes}分钟`
+  } else {
+    const h = Math.floor(totalMinutes / 60)
+    const m = totalMinutes % 60
+    if (m > 0) {
+      return `${h}小时${m}分钟`
+    } else {
+      return `${h}小时`
+    }
+  }
+}
+
 // 剩余时间相关函数（简化版，主要数据已经从充电桩API获取）
 const getVehicleRemainingTime = async (vehicle_id) => {
   try {
@@ -1210,9 +1414,50 @@ const getVehicleRemainingTime = async (vehicle_id) => {
 
 // 计算预估费用
 const calculateEstimatedFee = (amount) => {
-  // 使用简单的费用计算逻辑
-  const electricityPrice = 1.0 // 1元/度
-  const servicePrice = 0.5 // 0.5元/度
+  // 使用配置数据计算费用
+  const currentPrices = systemConfig.value.billing?.prices || {
+    peak_time_price: 1.0,
+    normal_time_price: 0.7,
+    valley_time_price: 0.4,
+    service_fee_price: 0.8
+  }
+  
+  // 根据当前时段确定电价
+  const hour = new Date().getHours()
+  const timePeriods = systemConfig.value.billing?.time_periods || {
+    peak_times: [[10, 15], [18, 21]],
+    normal_times: [[7, 10], [15, 18], [21, 23]],
+    valley_times: [[23, 7]]
+  }
+  
+  let electricityPrice = currentPrices.normal_time_price
+  
+  // 检查峰时
+  for (const [start, end] of timePeriods.peak_times || []) {
+    if (hour >= start && hour < end) {
+      electricityPrice = currentPrices.peak_time_price
+      break
+    }
+  }
+  
+  // 检查谷时（处理跨日情况）
+  if (electricityPrice === currentPrices.normal_time_price) {
+    for (const [start, end] of timePeriods.valley_times || []) {
+      if (start > end) { // 跨日情况，如23:00-7:00
+        if (hour >= start || hour < end) {
+          electricityPrice = currentPrices.valley_time_price
+          break
+        }
+      } else {
+        if (hour >= start && hour < end) {
+          electricityPrice = currentPrices.valley_time_price
+          break
+        }
+      }
+    }
+  }
+  
+  const servicePrice = currentPrices.service_fee_price
   
   const electricity_fee = amount * electricityPrice
   const service_fee = amount * servicePrice
@@ -1260,24 +1505,16 @@ const canManageVehicle = (vehicle) => {
          vehicle.status === 'waiting' || vehicle.status === 'charging'
 }
 
-// 管理操作方法
-const cancelQueue = async (vehicle) => {
-  if (!vehicle.queue_id) {
-    // 从queueData中查找对应的queue_id
-    const queueItem = queueData.value.find(q => 
-      q.vehicle && q.vehicle.id === vehicle.id && 
-      (q.status === 'waiting' || q.status === 'queuing')
-    )
-    if (!queueItem) {
-      ElMessage.error('找不到对应的排队记录')
-      return
-    }
-    vehicle.queue_id = queueItem.id
+// 管理操作方法 - 取消排队（针对订单）
+const cancelQueue = async (order) => {
+  if (!order.record_number) {
+    ElMessage.error('找不到对应的排队记录')
+    return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定要取消车辆 "${vehicle.license_plate}" 的排队吗？`,
+      `确定要取消车辆 "${order.license_plate}" 的排队吗？\n订单编号: ${order.record_number}`,
       '确认取消排队',
       {
         type: 'warning',
@@ -1287,12 +1524,13 @@ const cancelQueue = async (vehicle) => {
     )
 
     // 设置加载状态
-    vehicle.cancelling = true
+    order.cancelling = true
 
-    await api.delete(`/admin/queue/${vehicle.queue_id}/cancel`)
+    // 使用订单编号取消排队
+    await api.delete(`/admin/queue/record/${order.record_number}/cancel`)
     
-    ElMessage.success(`已取消车辆 ${vehicle.license_plate} 的排队`)
-    console.log(`✅ 取消排队成功: ${vehicle.license_plate}`)
+    ElMessage.success(`已取消车辆 ${order.license_plate} 的排队`)
+    console.log(`✅ 取消排队成功: 订单 ${order.record_number}`)
     
     // 刷新数据
     await fetchAllData()
@@ -1306,26 +1544,20 @@ const cancelQueue = async (vehicle) => {
       ElMessage.error('取消排队失败: ' + (error.response?.data?.detail || error.message))
     }
   } finally {
-    vehicle.cancelling = false
+    order.cancelling = false
   }
 }
 
-const stopCharging = async (vehicle) => {
-  if (!vehicle.queue_id) {
-    // 从queueData中查找对应的queue_id
-    const queueItem = queueData.value.find(q => 
-      q.vehicle && q.vehicle.id === vehicle.id && q.status === 'charging'
-    )
-    if (!queueItem) {
-      ElMessage.error('找不到对应的充电记录')
-      return
-    }
-    vehicle.queue_id = queueItem.id
+// 停止充电（针对订单）
+const stopCharging = async (order) => {
+  if (!order.record_number) {
+    ElMessage.error('找不到对应的充电记录')
+    return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定要强制停止车辆 "${vehicle.license_plate}" 的充电吗？\n系统将自动计算费用并生成充电记录。`,
+      `确定要强制停止车辆 "${order.license_plate}" 的充电吗？\n订单编号: ${order.record_number}\n系统将自动计算费用并生成充电记录。`,
       '确认停止充电',
       {
         type: 'warning',
@@ -1335,12 +1567,13 @@ const stopCharging = async (vehicle) => {
     )
 
     // 设置加载状态
-    vehicle.stopping = true
+    order.stopping = true
 
-    const response = await api.post(`/admin/queue/${vehicle.queue_id}/stop-charging`)
+    // 使用订单编号停止充电
+    const response = await api.post(`/admin/queue/record/${order.record_number}/stop-charging`)
     
-    ElMessage.success(`已停止车辆 ${vehicle.license_plate} 的充电`)
-    console.log(`✅ 停止充电成功: ${vehicle.license_plate}`, response)
+    ElMessage.success(`已停止车辆 ${order.license_plate} 的充电`)
+    console.log(`✅ 停止充电成功: 订单 ${order.record_number}`, response)
     
     // 显示充电记录信息
     if (response.charging_record) {
@@ -1363,7 +1596,7 @@ const stopCharging = async (vehicle) => {
       ElMessage.error('停止充电失败: ' + (error.response?.data?.detail || error.message))
     }
   } finally {
-    vehicle.stopping = false
+    order.stopping = false
   }
 }
 
@@ -1462,9 +1695,29 @@ onUnmounted(() => {
 .stat-color.stay { background: #909399; }
 .stat-color.fast-waiting { background: #409EFF; }
 .stat-color.trickle-waiting { background: #E6A23C; }
+.stat-color.fast-queuing { background: #5dade2; }
+.stat-color.trickle-queuing { background: #f5b041; }
 .stat-color.fast-charging { background: #67C23A; }
 .stat-color.trickle-charging { background: #F56C6C; }
 .stat-color.total { background: #303133; }
+.stat-color.config { background: #9c27b0; }
+
+/* 配置项特殊样式 */
+.config-item {
+  border: 2px solid #9c27b0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.config-item .stat-number {
+  color: #9c27b0;
+  font-weight: bold;
+}
+
+.config-item .stat-label {
+  color: #6c757d;
+  font-size: 11px;
+}
 
 .scene-main {
   display: grid;

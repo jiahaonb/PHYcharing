@@ -1,42 +1,50 @@
 #!/usr/bin/env python3
+"""检查充电记录状态脚本"""
+
 import sys
-sys.path.append('.')
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__)))
 
 from app.core.database import get_db
-from app.models.charging import ChargingRecord
+from app.models import ChargingRecord
+from datetime import datetime
 
-# 创建数据库会话
-db = next(get_db())
+def main():
+    db = next(get_db())
+    
+    try:
+        print('=== 检查充电记录状态 ===')
+        
+        # 获取所有充电记录
+        all_records = db.query(ChargingRecord).all()
+        print(f'总充电记录数: {len(all_records)}')
+        
+        if all_records:
+            # 按状态分组统计
+            status_count = {}
+            for record in all_records:
+                status = getattr(record, 'status', 'unknown')
+                status_count[status] = status_count.get(status, 0) + 1
+            
+            print('\n状态统计:')
+            for status, count in status_count.items():
+                print(f'  {status}: {count}')
+            
+            # 显示非completed状态的记录
+            non_completed = [r for r in all_records if getattr(r, 'status', '') != 'completed']
+            if non_completed:
+                print(f'\n=== 非completed状态的记录 ({len(non_completed)}个) ===')
+                for record in non_completed:
+                    print(f'  记录ID: {record.id}, 订单号: {getattr(record, "record_number", "N/A")}, 状态: {getattr(record, "status", "N/A")}, 车牌: {getattr(record, "license_plate", "N/A")}')
+            else:
+                print('\n✅ 所有充电记录都已完成')
+        
+    except Exception as e:
+        print(f'❌ 检查过程中出错: {e}')
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
 
-# 查询最新的充电记录
-records = db.query(ChargingRecord).order_by(ChargingRecord.created_at.desc()).limit(10).all()
-
-print(f'数据库中共有 {db.query(ChargingRecord).count()} 条充电记录')
-print('\n最新的10条充电记录:')
-print('-' * 120)
-print(f'{"ID":<5} {"订单编号":<25} {"状态":<12} {"车牌号":<15} {"剩余时间":<10} {"创建时间":<20}')
-print('-' * 120)
-
-for record in records:
-    remaining_str = f'{record.remaining_time}分钟' if record.remaining_time is not None else '未设置'
-    print(f'{record.id:<5} {record.record_number:<25} {record.status:<12} {record.license_plate:<15} {remaining_str:<10} {record.created_at.strftime("%Y-%m-%d %H:%M:%S"):<20}')
-
-# 查询目前正在充电的记录
-charging_records = db.query(ChargingRecord).filter(ChargingRecord.status == 'charging').all()
-print(f'\n目前正在充电的记录数量: {len(charging_records)}')
-for record in charging_records:
-    print(f'  - ID:{record.id} 订单号:{record.record_number} 车牌:{record.license_plate} 充电桩ID:{record.charging_pile_id} 剩余时间:{record.remaining_time}分钟')
-
-# 查询分配给充电桩的记录
-assigned_records = db.query(ChargingRecord).filter(ChargingRecord.status == 'assigned').all()
-print(f'\n等待充电的记录数量: {len(assigned_records)}')
-for record in assigned_records:
-    print(f'  - ID:{record.id} 订单号:{record.record_number} 车牌:{record.license_plate} 充电桩ID:{record.charging_pile_id}')
-
-# 查询所有有充电桩分配的记录
-pile_assigned_records = db.query(ChargingRecord).filter(ChargingRecord.charging_pile_id.isnot(None)).all()
-print(f'\n已分配充电桩的记录数量: {len(pile_assigned_records)}')
-for record in pile_assigned_records:
-    print(f'  - ID:{record.id} 订单号:{record.record_number} 车牌:{record.license_plate} 充电桩ID:{record.charging_pile_id} 状态:{record.status}')
-
-db.close() 
+if __name__ == "__main__":
+    main() 

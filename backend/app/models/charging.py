@@ -112,10 +112,16 @@ class ChargingRecord(Base):
     start_time = Column(DateTime(timezone=True), nullable=True)  # 启动时间
     end_time = Column(DateTime(timezone=True), nullable=True)  # 停止时间
     
-    # 费用信息
-    electricity_fee = Column(Float, nullable=False)  # 充电费用
-    service_fee = Column(Float, nullable=False)  # 服务费用
-    total_fee = Column(Float, nullable=False)  # 总费用
+    # 费用信息（计划值）
+    electricity_fee = Column(Float, nullable=False)  # 计划充电费用
+    service_fee = Column(Float, nullable=False)  # 计划服务费用
+    total_fee = Column(Float, nullable=False)  # 计划总费用
+    
+    # 实际充电信息（结束时更新）
+    actual_charging_amount = Column(Float, nullable=True)  # 实际充电量
+    actual_electricity_fee = Column(Float, nullable=True)  # 实际充电费
+    actual_service_fee = Column(Float, nullable=True)  # 实际服务费
+    actual_total_fee = Column(Float, nullable=True)  # 实际总费用
     
     # 其他信息
     unit_price = Column(Float, nullable=True)  # 单位电价

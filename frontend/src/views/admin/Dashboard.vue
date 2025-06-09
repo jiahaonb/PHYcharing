@@ -155,8 +155,8 @@
             <el-table-column prop="pile_number" label="桩号" width="100" />
             <el-table-column label="类型" width="100">
               <template #default="scope">
-                <el-tag :type="scope.row.charging_mode === 'FAST' ? 'success' : 'info'" size="small">
-                  {{ scope.row.charging_mode === 'FAST' ? '快充' : '慢充' }}
+                <el-tag :type="scope.row.charging_mode === 'fast' ? 'success' : 'info'" size="small">
+                  {{ scope.row.charging_mode === 'fast' ? '快充' : '慢充' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -178,7 +178,7 @@
             </el-table-column>
             <el-table-column label="电压(V)" width="100">
               <template #default="scope">
-                {{ scope.row.charging_mode === 'FAST' ? '380' : '220' }}
+                {{ scope.row.charging_mode === 'fast' ? '380' : '220' }}
               </template>
             </el-table-column>
             <el-table-column label="当前电流(A)" width="120">

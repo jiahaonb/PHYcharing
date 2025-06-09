@@ -141,8 +141,11 @@
               {{ getOrderStatusText(selectedOrder.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="充电量">
+          <el-descriptions-item label="计划充电量">
             {{ selectedOrder.charging_amount }}度
+          </el-descriptions-item>
+          <el-descriptions-item label="实际充电量" v-if="selectedOrder.actual_charging_amount">
+            <span class="actual-amount">{{ selectedOrder.actual_charging_amount.toFixed(2) }}度</span>
           </el-descriptions-item>
           <el-descriptions-item label="充电模式">
             {{ selectedOrder.charging_mode === 'FAST' ? '快充' : '慢充' }}
@@ -159,14 +162,23 @@
           <el-descriptions-item label="充电时长" v-if="selectedOrder.charging_duration">
             {{ selectedOrder.charging_duration.toFixed(2) }}小时
           </el-descriptions-item>
-          <el-descriptions-item label="电费" v-if="selectedOrder.electricity_fee">
+          <el-descriptions-item label="计划电费" v-if="selectedOrder.electricity_fee">
             ¥{{ selectedOrder.electricity_fee.toFixed(2) }}
           </el-descriptions-item>
-          <el-descriptions-item label="服务费" v-if="selectedOrder.service_fee">
+          <el-descriptions-item label="实际电费" v-if="selectedOrder.actual_electricity_fee">
+            <span class="actual-fee">¥{{ selectedOrder.actual_electricity_fee.toFixed(2) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="计划服务费" v-if="selectedOrder.service_fee">
             ¥{{ selectedOrder.service_fee.toFixed(2) }}
           </el-descriptions-item>
-          <el-descriptions-item label="总费用" v-if="selectedOrder.total_fee">
-            <span class="total-fee">¥{{ selectedOrder.total_fee.toFixed(2) }}</span>
+          <el-descriptions-item label="实际服务费" v-if="selectedOrder.actual_service_fee">
+            <span class="actual-fee">¥{{ selectedOrder.actual_service_fee.toFixed(2) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="计划总费用" v-if="selectedOrder.total_fee">
+            ¥{{ selectedOrder.total_fee.toFixed(2) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="实际总费用" v-if="selectedOrder.actual_total_fee">
+            <span class="actual-total-fee">¥{{ selectedOrder.actual_total_fee.toFixed(2) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="单价" v-if="selectedOrder.unit_price">
             {{ selectedOrder.unit_price }}元/度
@@ -403,6 +415,22 @@ onMounted(() => {
 }
 
 .total-fee {
+  font-weight: bold;
+  color: #e6a23c;
+  font-size: 16px;
+}
+
+.actual-amount {
+  font-weight: bold;
+  color: #67c23a;
+}
+
+.actual-fee {
+  font-weight: bold;
+  color: #409eff;
+}
+
+.actual-total-fee {
   font-weight: bold;
   color: #e6a23c;
   font-size: 16px;

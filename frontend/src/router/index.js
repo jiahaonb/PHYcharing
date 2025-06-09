@@ -77,11 +77,6 @@ const routes = [
         component: () => import('@/views/admin/Reports.vue')
       },
       {
-        path: 'monitoring',
-        name: 'Monitoring',
-        component: () => import('@/views/admin/Monitoring.vue')
-      },
-      {
         path: 'vehicles',
         name: 'AdminVehicleManagement',
         component: () => import('@/views/admin/VehicleManagement.vue')
@@ -105,6 +100,11 @@ const routes = [
         path: 'users',
         name: 'UserManagement',
         component: () => import('@/views/admin/UserManagement.vue')
+      },
+      {
+        path: 'orders',
+        name: 'OrderManagement',
+        component: () => import('@/views/admin/OrderManagement.vue')
       }
     ]
   }

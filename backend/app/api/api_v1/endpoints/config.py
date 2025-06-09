@@ -153,6 +153,10 @@ async def update_config(
     # 清空缓存
     config_service.invalidate_cache()
     
+    # 重新加载全局配置
+    from app.core.config import settings
+    settings.reload_config()
+    
     return config
 
 
@@ -264,6 +268,10 @@ async def batch_update_configs(
     
     # 清空缓存
     config_service.invalidate_cache()
+    
+    # 重新加载全局配置
+    from app.core.config import settings
+    settings.reload_config()
     
     return {
         "success_count": len(results),

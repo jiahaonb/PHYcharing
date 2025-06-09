@@ -16,18 +16,34 @@ class ChargingScheduleService:
         """生成排队号码"""
         prefix = "F" if charging_mode == ChargingMode.FAST else "T"
         
-        # 获取当前该模式的最大号码
-        last_queue = self.db.query(ChargingQueue).filter(
+        # 获取当前该模式的所有队列号，并转换为数字进行正确排序
+        existing_queues = self.db.query(ChargingQueue).filter(
             ChargingQueue.queue_number.like(f"{prefix}%")
-        ).order_by(ChargingQueue.queue_number.desc()).first()
+        ).all()
         
-        if last_queue:
-            last_number = int(last_queue.queue_number[1:])  # 去掉前缀字母
-            new_number = last_number + 1
+        # 提取所有数字部分并找到最大值
+        existing_numbers = []
+        for queue in existing_queues:
+            try:
+                number = int(queue.queue_number[1:])  # 去掉前缀字母
+                existing_numbers.append(number)
+            except ValueError:
+                continue  # 忽略无效的队列号
+        
+        if existing_numbers:
+            new_number = max(existing_numbers) + 1
         else:
             new_number = 1
         
-        return f"{prefix}{new_number}"
+        # 确保生成的队列号不存在（双重检查）
+        candidate_queue_number = f"{prefix}{new_number}"
+        while self.db.query(ChargingQueue).filter(
+            ChargingQueue.queue_number == candidate_queue_number
+        ).first():
+            new_number += 1
+            candidate_queue_number = f"{prefix}{new_number}"
+        
+        return candidate_queue_number
     
     def submit_charging_request(self, user_id: int, vehicle_id: int, 
                               charging_mode: ChargingMode, requested_amount: float) -> str:
@@ -94,30 +110,24 @@ class ChargingScheduleService:
         return queue_number
     
     def schedule_charging(self):
-        """三阶段FCFS调度算法：等候区→排队区→充电位"""
-        print("🔄 开始三阶段充电调度...")
+        """三区调度算法：等候区 → 充电区排队 → 充电区充电"""
+        print("🔄 开始三区充电调度...")
         
-        # 阶段1: 等候区 → 排队区调度（快慢充分开）
-        self._schedule_waiting_to_queuing(ChargingMode.FAST)
-        self._schedule_waiting_to_queuing(ChargingMode.TRICKLE)
+        # 阶段1: 等候区 → 充电区排队调度（快慢充分开）
+        self._schedule_waiting_to_charging_queue(ChargingMode.FAST)
+        self._schedule_waiting_to_charging_queue(ChargingMode.TRICKLE)
         
-        # 阶段2: 排队区 → 充电位调度（快慢充分开）
-        self._schedule_queuing_to_charging(ChargingMode.FAST)
-        self._schedule_queuing_to_charging(ChargingMode.TRICKLE)
+        # 阶段2: 充电区排队 → 充电区充电调度（快慢充分开）
+        self._schedule_charging_queue_to_charging(ChargingMode.FAST)
+        self._schedule_charging_queue_to_charging(ChargingMode.TRICKLE)
         
-        print("✅ 三阶段调度完成")
+        print("✅ 三区调度完成")
     
-    def _schedule_waiting_to_queuing(self, charging_mode: ChargingMode):
-        """阶段1: 将等候区车辆调度到排队区"""
-        print(f"📋 调度{charging_mode.value}充电等候区车辆...")
+    def _schedule_waiting_to_charging_queue(self, charging_mode: ChargingMode):
+        """阶段1: 将等候区车辆调度到充电区排队"""
+        print(f"📋 调度{charging_mode.value}充电等候区车辆到充电区排队...")
         
-        # 获取该模式的所有充电桩
-        all_piles = self.db.query(ChargingPile).filter(
-            ChargingPile.charging_mode == charging_mode,
-            ChargingPile.is_active == True
-        ).all()
-        
-        # 获取该模式等候区的车辆（按FCFS排序）
+        # 获取等候区的车辆（按FCFS排序）
         waiting_vehicles = self.db.query(ChargingQueue).filter(
             ChargingQueue.charging_mode == charging_mode,
             ChargingQueue.status == QueueStatus.WAITING
@@ -125,33 +135,115 @@ class ChargingScheduleService:
         
         print(f"  等候区车辆数: {len(waiting_vehicles)}")
         
-        # 为每个等候车辆寻找有空闲排队位的充电桩
+        if not waiting_vehicles:
+            print(f"  等候区无{charging_mode.value}充电车辆")
+            return
+        
+        # 获取该模式的所有充电桩
+        available_piles = self.db.query(ChargingPile).filter(
+            ChargingPile.charging_mode == charging_mode,
+            ChargingPile.is_active == True
+        ).order_by(ChargingPile.pile_number).all()  # 按桩号排序
+        
+        print(f"  检查所有{charging_mode.value}充电桩: {[p.pile_number for p in available_piles]}")
+        
+        # 首先检查是否有任何可用的排队位置
+        has_available_position = False
+        for pile in available_piles:
+            current_queue_count = self.db.query(ChargingQueue).filter(
+                ChargingQueue.charging_pile_id == pile.id,
+                ChargingQueue.status == QueueStatus.QUEUING
+            ).count()
+            print(f"  充电桩{pile.pile_number}当前排队人数: {current_queue_count}, 最大排队人数: {settings.CHARGING_QUEUE_LEN}")
+            if current_queue_count < settings.CHARGING_QUEUE_LEN:
+                has_available_position = True
+                break
+        
+        if not has_available_position:
+            # print(f"  ⏳ 所有{charging_mode.value}充电桩排队区已满，等候区车辆继续等待")
+            return
+        
+        # 为每个等候车辆寻找总耗时最短的充电桩
         for vehicle in waiting_vehicles:
             assigned = False
             
-            # 按充电桩ID顺序遍历（保证FCFS公平性）
-            for pile in sorted(all_piles, key=lambda p: p.id):
+            # 找到总耗时最短的充电桩
+            best_pile = None
+            min_total_time = float('inf')
+            
+            print(f"  🚗 为车辆 {vehicle.queue_number} 寻找最优充电桩:")
+            
+            for pile in available_piles:
                 # 计算该充电桩当前排队人数（不包括正在充电的）
                 current_queue_count = self.db.query(ChargingQueue).filter(
                     ChargingQueue.charging_pile_id == pile.id,
                     ChargingQueue.status == QueueStatus.QUEUING
                 ).count()
                 
-                # 如果充电桩有空闲排队位（最多3个排队位）
-                if current_queue_count < settings.CHARGING_QUEUE_LEN:
-                    self._assign_to_queue(vehicle, pile)
-                    assigned = True
-                    print(f"  ✅ 车辆 {vehicle.queue_number} 分配到充电桩 {pile.pile_number} 排队区")
-                    break
+                # 如果充电桩排队区已满，跳过
+                if current_queue_count >= settings.CHARGING_QUEUE_LEN:
+                    print(f"    充电桩{pile.pile_number}: 排队区已满 ({current_queue_count}/{settings.CHARGING_QUEUE_LEN})")
+                    continue
+                
+                # 计算总耗时
+                total_time = self._calculate_total_completion_time(pile, vehicle)
+                print(f"    充电桩{pile.pile_number}: 总耗时 {total_time:.1f}小时")
+                
+                if total_time < min_total_time:
+                    min_total_time = total_time
+                    best_pile = pile
+            
+            # 如果找到了可用的充电桩，分配到其排队区
+            if best_pile:
+                self._assign_to_charging_queue(vehicle, best_pile)
+                assigned = True
+                print(f"  ✅ 车辆 {vehicle.queue_number} 从等候区分配到充电桩 {best_pile.pile_number} (总耗时: {min_total_time:.1f}小时)")
             
             # 如果没有可用的排队位，等候车辆继续等待
             if not assigned:
-                print(f"  ⏳ 车辆 {vehicle.queue_number} 继续等候（无空闲排队位）")
-                break
-                
-    def _schedule_queuing_to_charging(self, charging_mode: ChargingMode):
-        """阶段2: 将排队区车辆调度到充电位"""
-        print(f"⚡ 调度{charging_mode.value}充电排队区车辆...")
+                print(f"  ⏳ 车辆 {vehicle.queue_number} 继续在等候区等待（所有充电桩排队区已满）")
+                break  # 后面的车辆也不用检查了
+    
+    def _calculate_total_completion_time(self, pile: ChargingPile, new_vehicle: ChargingQueue) -> float:
+        """计算如果将新车辆分配到该充电桩的总完成时间（小时）"""
+        total_time = 0.0
+        
+        # 1. 获取正在充电的车辆剩余时间
+        charging_vehicle = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_pile_id == pile.id,
+            ChargingQueue.status == QueueStatus.CHARGING
+        ).first()
+        
+        if charging_vehicle:
+            # 获取正在充电车辆的剩余时间
+            charging_record = self.db.query(ChargingRecord).filter(
+                ChargingRecord.queue_number == charging_vehicle.queue_number
+            ).first()
+            
+            if charging_record and charging_record.remaining_time:
+                # 剩余时间是分钟，转换为小时
+                remaining_hours = charging_record.remaining_time / 60.0
+                total_time += remaining_hours
+        
+        # 2. 获取排队区所有车辆的充电时间
+        queuing_vehicles = self.db.query(ChargingQueue).filter(
+            ChargingQueue.charging_pile_id == pile.id,
+            ChargingQueue.status == QueueStatus.QUEUING
+        ).order_by(ChargingQueue.queue_time).all()
+        
+        for queuing_vehicle in queuing_vehicles:
+            charging_time = queuing_vehicle.requested_amount / pile.power
+            total_time += charging_time
+        
+        # 3. 加上新车辆的充电时间
+        new_vehicle_time = new_vehicle.requested_amount / pile.power
+        total_time += new_vehicle_time
+        
+        return total_time
+    
+    def _schedule_charging_queue_to_charging(self, charging_mode: ChargingMode):
+        """阶段2: 将充电区排队车辆调度到充电位"""
+        print(f"⚡ 调度{charging_mode.value}充电区排队车辆到充电位...")
         
         # 获取该模式的所有充电桩
         all_piles = self.db.query(ChargingPile).filter(
@@ -175,12 +267,12 @@ class ChargingScheduleService:
                 
                 if next_vehicle:
                     self.start_charging(next_vehicle.id)
-                    print(f"  ⚡ 车辆 {next_vehicle.queue_number} 在充电桩 {pile.pile_number} 开始充电")
+                    print(f"  ⚡ 车辆 {next_vehicle.queue_number} 在充电桩 {pile.pile_number} 从排队区开始充电")
     
-    def _assign_to_queue(self, queue_record: ChargingQueue, pile: ChargingPile):
-        """将车辆分配到充电桩排队区"""
+    def _assign_to_charging_queue(self, queue_record: ChargingQueue, pile: ChargingPile):
+        """将车辆从等候区分配到充电桩排队区"""
         queue_record.charging_pile_id = pile.id
-        queue_record.status = QueueStatus.QUEUING
+        queue_record.status = QueueStatus.QUEUING  # 从等候区 → 充电区排队
         
         # 计算预计完成时间
         waiting_time = self.calculate_waiting_time(pile)
@@ -195,8 +287,8 @@ class ChargingScheduleService:
         
         if charging_record:
             charging_record.charging_pile_id = pile.id
-            charging_record.status = "assigned"  # 已分配充电桩，排队中
-            print(f"📋 订单 {charging_record.record_number} 已分配到充电桩 {pile.pile_number}")
+            charging_record.status = "assigned"  # 已分配充电桩，在排队区等待
+            print(f"📋 订单 {charging_record.record_number} 从等候区分配到充电桩 {pile.pile_number} 排队区")
         
         self.db.commit()
     
@@ -239,8 +331,6 @@ class ChargingScheduleService:
         
         return total_waiting_time
     
-
-    
     def start_charging(self, queue_id: int):
         """开始充电"""
         queue_record = self.db.query(ChargingQueue).filter(
@@ -270,9 +360,9 @@ class ChargingScheduleService:
                 if pile:
                     # 预计充电时长 = 充电量 / 充电功率 (小时)
                     estimated_hours = charging_record.charging_amount / pile.power
-                    # 转换为分钟并设置剩余时间
-                    charging_record.remaining_time = int(estimated_hours * 60)
-                    print(f"⏰ 设置订单 {charging_record.record_number} 剩余时间: {charging_record.remaining_time}分钟")
+                    # 转换为分钟并设置剩余时间，使用四舍五入避免少1分钟
+                    charging_record.remaining_time = round(estimated_hours * 60)
+                    print(f"⏰ 设置订单 {charging_record.record_number} 剩余时间: {charging_record.remaining_time}分钟 (预计{estimated_hours:.2f}小时)")
             
             # 同步更新充电桩状态为正在充电
             if queue_record.charging_pile_id:
@@ -299,6 +389,13 @@ class ChargingScheduleService:
         # 计算费用
         end_time = get_china_time()
         start_time = queue_record.start_charging_time
+        
+        # 确保时间对象的一致性（处理时区问题）
+        if start_time.tzinfo is None:
+            # 如果start_time是naive datetime，假设它是中国时间
+            from app.utils.timezone import CHINA_TZ
+            start_time = start_time.replace(tzinfo=CHINA_TZ)
+        
         actual_duration = (end_time - start_time).total_seconds() / 3600  # 转换为小时
         
         # 获取充电桩信息
@@ -324,17 +421,19 @@ class ChargingScheduleService:
         
         # 更新充电记录
         charging_record.charging_pile_id = queue_record.charging_pile_id
-        charging_record.charging_amount = actual_amount
         charging_record.charging_duration = actual_duration
         charging_record.remaining_time = 0  # 充电完成，剩余时间设为0
         charging_record.start_time = start_time
         charging_record.end_time = end_time
-        charging_record.electricity_fee = electricity_fee
-        charging_record.service_fee = service_fee
-        charging_record.total_fee = total_fee
         charging_record.unit_price = unit_price
         charging_record.time_period = time_period
         charging_record.status = "completed"
+        
+        # 更新实际充电信息
+        charging_record.actual_charging_amount = actual_amount
+        charging_record.actual_electricity_fee = electricity_fee
+        charging_record.actual_service_fee = service_fee
+        charging_record.actual_total_fee = total_fee
         
         # 更新充电桩统计
         pile.total_charging_count += 1
@@ -371,20 +470,23 @@ class ChargingScheduleService:
         
         # 判断时段
         if any(start <= hour < end for start, end in settings.PEAK_TIME_RANGES):
-            unit_price = settings.PEAK_TIME_PRICE
+            electricity_unit_price = settings.PEAK_TIME_PRICE
             time_period = "峰时"
         elif any(start <= hour < end for start, end in settings.NORMAL_TIME_RANGES):
-            unit_price = settings.NORMAL_TIME_PRICE
+            electricity_unit_price = settings.NORMAL_TIME_PRICE
             time_period = "平时"
         else:
-            unit_price = settings.VALLEY_TIME_PRICE
+            electricity_unit_price = settings.VALLEY_TIME_PRICE
             time_period = "谷时"
         
-        electricity_fee = unit_price * amount
-        service_fee = settings.SERVICE_FEE_PRICE * amount
+        service_unit_price = settings.SERVICE_FEE_PRICE
+        
+        # 按照新的计费公式：实际费用 = 实际充电量 * (电量单价 + 服务费单价)
+        electricity_fee = electricity_unit_price * amount
+        service_fee = service_unit_price * amount
         total_fee = electricity_fee + service_fee
         
-        return electricity_fee, service_fee, total_fee, unit_price, time_period
+        return electricity_fee, service_fee, total_fee, electricity_unit_price, time_period
     
     def generate_record_number(self, charging_mode: ChargingMode) -> str:
         """生成详单编号"""
@@ -510,6 +612,15 @@ class ChargingScheduleService:
                 pile = self.db.query(ChargingPile).filter(
                     ChargingPile.id == queue_record.charging_pile_id
                 ).first()
+            
+            # 更新对应的充电记录状态
+            charging_record = self.db.query(ChargingRecord).filter(
+                ChargingRecord.queue_number == queue_record.queue_number
+            ).first()
+            
+            if charging_record:
+                charging_record.status = "completed"  # 设置为完成状态，前端将不再显示
+                print(f"🔄 取消时更新充电记录 {charging_record.record_number} 状态为 completed")
             
             queue_record.status = QueueStatus.CANCELLED
             self.db.commit()

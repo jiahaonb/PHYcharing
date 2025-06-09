@@ -25,6 +25,11 @@ class VehicleResponse(BaseModel):
 
 class QueueStatusResponse(BaseModel):
     id: int
+    queue_number: str  # 添加队列号
+    vehicle_id: int  # 添加车辆ID
+    vehicle_license: str  # 添加车牌号
+    charging_mode: str  # 添加充电模式
+    requested_amount: float  # 添加请求充电量
     pile_name: str
     position: int
     total_in_queue: int
@@ -33,6 +38,13 @@ class QueueStatusResponse(BaseModel):
     status: str
     start_charging_time: Optional[datetime] = None
     duration: Optional[int] = None
+    # 添加实际充电数据字段
+    actual_charging_amount: Optional[float] = None
+    actual_electricity_fee: Optional[float] = None
+    actual_service_fee: Optional[float] = None
+    actual_total_fee: Optional[float] = None
+    # 添加剩余时间字段
+    remaining_time: Optional[int] = None
     
     class Config:
         from_attributes = True
@@ -147,8 +159,12 @@ def get_user_queue_status(
     db: Session = Depends(get_db)
 ):
     """获取用户当前的排队状态"""
-    # 查找用户的活跃队列（等待中、排队中、正在充电）
-    active_queues = db.query(ChargingQueue).filter(
+    from sqlalchemy.orm import joinedload
+    
+    # 查找用户的活跃队列（等待中、排队中、正在充电），并预加载车辆信息
+    active_queues = db.query(ChargingQueue).options(
+        joinedload(ChargingQueue.vehicle)
+    ).filter(
         ChargingQueue.user_id == current_user.id,
         ChargingQueue.status.in_([QueueStatus.WAITING, QueueStatus.QUEUING, QueueStatus.CHARGING])
     ).all()
@@ -156,8 +172,14 @@ def get_user_queue_status(
     result = []
     for queue in active_queues:
         # 获取充电桩信息
-        pile = db.query(ChargingPile).filter(ChargingPile.id == queue.charging_pile_id).first()
-        pile_name = f"{pile.charging_mode.value}充电桩-{pile.pile_number}" if pile else f"充电桩-{queue.charging_pile_id}"
+        pile = None
+        pile_name = "等候区"
+        if queue.charging_pile_id:
+            pile = db.query(ChargingPile).filter(ChargingPile.id == queue.charging_pile_id).first()
+            if pile:
+                pile_name = f"{pile.charging_mode.value}充电桩-{pile.pile_number}"
+            else:
+                pile_name = f"充电桩-{queue.charging_pile_id}"
         
         # 计算排队位置和总人数
         if queue.charging_pile_id:
@@ -189,21 +211,83 @@ def get_user_queue_status(
             
             position = waiting_before + 1
         
-        # 计算预计等待时间（简单估算：每人平均30分钟）
+        # 计算预计等待时间和获取剩余时间
+        estimated_time = 0
+        remaining_time = None
+        
         if queue.status == QueueStatus.WAITING:
-            estimated_time = (position - 1) * 30
+            # 等候区：根据前方排队人数估算等待时间
+            if position > 1:
+                estimated_time = (position - 1) * 30  # 每人平均30分钟
+            else:
+                estimated_time = 5  # 第一位预计5分钟内分配
         elif queue.status == QueueStatus.QUEUING:
-            estimated_time = (position - 1) * 30
+            # 充电区排队：计算前方车辆的剩余时间
+            if queue.charging_pile_id:
+                # 查找当前正在充电的车辆剩余时间
+                charging_vehicle = db.query(ChargingQueue).filter(
+                    ChargingQueue.charging_pile_id == queue.charging_pile_id,
+                    ChargingQueue.status == QueueStatus.CHARGING
+                ).first()
+                
+                if charging_vehicle:
+                    charging_record = db.query(ChargingRecord).filter(
+                        ChargingRecord.queue_number == charging_vehicle.queue_number
+                    ).first()
+                    if charging_record and charging_record.remaining_time:
+                        estimated_time = charging_record.remaining_time
+                
+                # 加上前方排队车辆的时间
+                estimated_time += (position - 1) * 30
+            else:
+                estimated_time = position * 30
         else:  # CHARGING
-            estimated_time = 0
+            # 正在充电：获取当前充电记录的剩余时间
+            if charging_record and charging_record.remaining_time is not None:
+                remaining_time = charging_record.remaining_time
+                estimated_time = remaining_time
+            else:
+                estimated_time = 0
         
         # 计算充电时长（如果正在充电）
         duration = None
         if queue.status == QueueStatus.CHARGING and queue.start_charging_time:
             duration = int((datetime.now() - queue.start_charging_time).total_seconds() / 60)
         
+        # 获取实际充电数据（如果有关联的充电记录）
+        actual_charging_amount = None
+        actual_electricity_fee = None
+        actual_service_fee = None
+        actual_total_fee = None
+        
+        # 查找关联的充电记录
+        charging_record = db.query(ChargingRecord).filter(
+            ChargingRecord.queue_number == queue.queue_number
+        ).first()
+        
+        if charging_record:
+            actual_charging_amount = charging_record.actual_charging_amount
+            actual_electricity_fee = charging_record.actual_electricity_fee
+            actual_service_fee = charging_record.actual_service_fee
+            actual_total_fee = charging_record.actual_total_fee
+        
+        # 安全获取车辆牌照
+        vehicle_license = "未知车辆"
+        if queue.vehicle and queue.vehicle.license_plate:
+            vehicle_license = queue.vehicle.license_plate
+        
+        # 安全获取充电模式
+        charging_mode = "unknown"
+        if queue.charging_mode:
+            charging_mode = queue.charging_mode.value if hasattr(queue.charging_mode, 'value') else str(queue.charging_mode)
+        
         result.append(QueueStatusResponse(
             id=queue.id,
+            queue_number=queue.queue_number,
+            vehicle_id=queue.vehicle_id,
+            vehicle_license=vehicle_license,
+            charging_mode=charging_mode,
+            requested_amount=queue.requested_amount,
             pile_name=pile_name,
             position=position,
             total_in_queue=total_in_queue,
@@ -211,7 +295,12 @@ def get_user_queue_status(
             request_time=queue.queue_time,
             status=queue.status.value,
             start_charging_time=queue.start_charging_time,
-            duration=duration
+            duration=duration,
+            actual_charging_amount=actual_charging_amount,
+            actual_electricity_fee=actual_electricity_fee,
+            actual_service_fee=actual_service_fee,
+            actual_total_fee=actual_total_fee,
+            remaining_time=remaining_time
         ))
     
     return result
@@ -223,26 +312,42 @@ def get_charging_config_for_users(
 ):
     """获取充电相关配置信息，用户端使用"""
     try:
-        from app.services.config_service import ConfigService
-        config_service = ConfigService(db)
+        from app.services.config_service import config_service
         
         # 获取充电桩配置
         charging_config = config_service.get_charging_pile_config(db)
+        
+        # 获取计费配置
+        billing_config = config_service.get_billing_config(db)
         
         return {
             "fast_charging_power": charging_config["fast_charging_power"],
             "trickle_charging_power": charging_config["trickle_charging_power"],
             "fast_charging_pile_num": charging_config["fast_charging_pile_num"],
-            "trickle_charging_pile_num": charging_config["trickle_charging_pile_num"]
+            "trickle_charging_pile_num": charging_config["trickle_charging_pile_num"],
+            "billing": billing_config
         }
     except Exception as e:
         # 返回默认值，避免阻塞用户功能
-        print(f"获取充电配置失败: {e}")
+        print(f"获取配置失败: {e}")
         return {
             "fast_charging_power": 30.0,
             "trickle_charging_power": 7.0,
             "fast_charging_pile_num": 2,
-            "trickle_charging_pile_num": 4
+            "trickle_charging_pile_num": 4,
+            "billing": {
+                "prices": {
+                    "peak_time_price": 1.0,
+                    "normal_time_price": 0.7,
+                    "valley_time_price": 0.4,
+                    "service_fee_price": 0.8
+                },
+                "time_periods": {
+                    "peak_times": [[10, 15], [18, 21]],
+                    "normal_times": [[7, 10], [15, 18], [21, 23]],
+                    "valley_times": [[23, 7]]
+                }
+            }
         }
 
 @router.get("/vehicles-monitoring", summary="车辆监控")
